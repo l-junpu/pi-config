@@ -6,14 +6,14 @@ This folder contains 6 local extensions for Pi. Each extension adds functionalit
 
 ## Extensions Overview
 
-| Extension | Type | Description |
-|-----------|------|-------------|
-| **pi-handoff** | Command | Transfer context to a new focused session without lossy compaction |
-| **pi-omp-theme** | Theme/UI | OMP-inspired visual theme with Titanium dark/light, custom status line, editor, tool rendering |
-| **pi-questions** | Tool | Interactive questionnaire for clarifying requirements via single or multi-question pickers |
-| **pi-side-chat** | Overlay/Command | Fork conversation into a side chat while main agent keeps working |
-| **plan-build-mode** | Command/Shortcut | Toggle between planning and building modes with persistent state |
-| **todo-list** | Tool/Widget | Todo management tool with live-updating panel above the editor |
+| Extension           | Type             | Description                                                                                    |
+| ------------------- | ---------------- | ---------------------------------------------------------------------------------------------- |
+| **pi-handoff**      | Command          | Transfer context to a new focused session without lossy compaction                             |
+| **pi-omp-theme**    | Theme/UI         | OMP-inspired visual theme with Titanium dark/light, custom status line, editor, tool rendering |
+| **pi-questions**    | Tool             | Interactive questionnaire for clarifying requirements via single or multi-question pickers     |
+| **pi-side-chat**    | Overlay/Command  | Fork conversation into a side chat while main agent keeps working                              |
+| **plan-build-mode** | Command/Shortcut | Toggle between planning and building modes with persistent state                               |
+| **todo-list**       | Tool/Widget      | Todo management tool with live-updating panel above the editor                                 |
 
 ---
 
@@ -22,11 +22,13 @@ This folder contains 6 local extensions for Pi. Each extension adds functionalit
 **Purpose**: Transfer context to a new focused session. Instead of compaction (which is lossy), handoff extracts what matters for your next task and creates a new session with a generated prompt.
 
 ### Commands
+
 ```
 /handoff <goal for new thread>
 ```
 
 ### Usage Examples
+
 ```
 /handoff now implement this for teams as well
 /handoff execute phase one of the plan
@@ -34,13 +36,16 @@ This folder contains 6 local extensions for Pi. Each extension adds functionalit
 ```
 
 ### How It Works
+
 1. Gathers conversation context from current branch (handles compaction)
 2. Sends conversation + your goal to the model to generate a structured handoff prompt
 3. Shows the generated prompt in an editor for review/editing
 4. Creates a new session with parent tracking, pre-filled with the edited prompt
 
 ### Output Format
+
 The generated prompt contains exactly three sections:
+
 - **Context** — Bullet list of decisions, approaches, key findings
 - **Files** — Bullet list of file paths discussed/modified (in backticks)
 - **Task** — Short actionable paragraph for what to do next
@@ -51,12 +56,8 @@ The generated prompt contains exactly three sections:
 
 **Purpose**: OMP-inspired visual theme and TUI presentation extension. Combines Titanium dark/light themes with coordinated startup view, status line, editor, messages, and tool rendering.
 
-### Installation
-```bash
-pi install npm:@nguyenquangthai/pi-omp-theme
-```
-
 ### Key Features
+
 - **Presets**: `claude`, `omp`, `default`, `minimal`, `compact`, `full`, `ascii`, `native`
 - **Status line**: Model, effort, path, Git state, context usage, cost, time, session state
 - **Editor styles**: native, compact, boxed, dock
@@ -64,6 +65,7 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 - **Themes**: Titanium dark/light with Nerd Font/Unicode/ASCII modes
 
 ### Configuration (settings.json)
+
 ```json
 {
   "piOmpTheme": {
@@ -75,17 +77,19 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 ```
 
 ### Commands
-| Command | Purpose |
-|---------|---------|
-| `/pi-omp-theme` | Show active preset and surface state |
-| `/pi-omp-theme on/off` | Toggle extension for current session |
-| `/pi-omp-theme preset <name>` | Apply a preset |
-| `/pi-omp-theme placement above/below/border` | Change status placement |
-| `/pi-omp-theme editor <style> [frame]` | Change editor presentation |
-| `/pi-omp-theme surface <name> on/off` | Toggle a surface |
-| `/pi-omp-theme doctor` | Show capability, conflict, fallback, config diagnostics |
+
+| Command                                      | Purpose                                                 |
+| -------------------------------------------- | ------------------------------------------------------- |
+| `/pi-omp-theme`                              | Show active preset and surface state                    |
+| `/pi-omp-theme on/off`                       | Toggle extension for current session                    |
+| `/pi-omp-theme preset <name>`                | Apply a preset                                          |
+| `/pi-omp-theme placement above/below/border` | Change status placement                                 |
+| `/pi-omp-theme editor <style> [frame]`       | Change editor presentation                              |
+| `/pi-omp-theme surface <name> on/off`        | Toggle a surface                                        |
+| `/pi-omp-theme doctor`                       | Show capability, conflict, fallback, config diagnostics |
 
 ### Environment Variables
+
 - `PI_OMP_THEME_DISABLED=1` — Disable extension
 - `PI_OMP_THEME_NERD_FONTS=1|0` — Force Nerd Font glyphs
 - `PI_OMP_THEME_EDITOR=native|compact|boxed|dock` — Override editor style
@@ -102,6 +106,7 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 ### Tool: `questionnaire`
 
 ### Parameters
+
 ```typescript
 {
   questions: [
@@ -119,18 +124,21 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 ```
 
 ### Usage
+
 - **Single question**: Shows simple option list with ↑↓ navigation
 - **Multiple questions**: Shows tab bar navigation between questions + Submit tab
 
 ### Controls
-| Key | Action |
-|-----|--------|
-| ↑/↓ | Navigate options |
-| Enter | Select option / Submit (when all answered) |
-| Tab / ←/→ | Switch tabs (multi-question) |
-| Esc | Cancel |
+
+| Key       | Action                                     |
+| --------- | ------------------------------------------ |
+| ↑/↓       | Navigate options                           |
+| Enter     | Select option / Submit (when all answered) |
+| Tab / ←/→ | Switch tabs (multi-question)               |
+| Esc       | Cancel                                     |
 
 ### Example
+
 ```json
 {
   "questions": [
@@ -166,25 +174,28 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 **Purpose**: Fork the current conversation into a side chat while the main agent keeps working.
 
 ### Shortcuts
-| Key | Action |
-|-----|--------|
-| `Alt+/` | Open side chat / toggle focus |
-| `Alt+Shift+M` | Toggle compact / fullscreen view |
-| `Enter` | Send message |
-| `Esc` | Interrupt streaming, or close when idle |
-| `Alt+R` | Re-fork from latest main context |
-| `Alt+N` | Start empty conversation |
-| `Ctrl+T` | Toggle read-only / edit mode |
-| `PgUp` / `Shift+↑` | Scroll up |
-| `PgDn` / `Shift+↓` | Scroll down |
+
+| Key                | Action                                  |
+| ------------------ | --------------------------------------- |
+| `Alt+/`            | Open side chat / toggle focus           |
+| `Alt+Shift+M`      | Toggle compact / fullscreen view        |
+| `Enter`            | Send message                            |
+| `Esc`              | Interrupt streaming, or close when idle |
+| `Alt+R`            | Re-fork from latest main context        |
+| `Alt+N`            | Start empty conversation                |
+| `Ctrl+T`           | Toggle read-only / edit mode            |
+| `PgUp` / `Shift+↑` | Scroll up                               |
+| `PgDn` / `Shift+↓` | Scroll down                             |
 
 ### Commands
+
 ```
 /side              # Open side chat (fork conversation)
 /side-model        # Choose a model for side chat (independent of main)
 ```
 
 ### Features
+
 - **Forks conversation** — starts with copy of current branch context + all extension tools
 - **Persists across close/reopen** — closing preserves conversation in memory
 - **Read-only by default** — read/grep/find/ls only; toggle to edit mode (`Ctrl+T`) for write tools with overlap warnings
@@ -192,6 +203,7 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 - **Independent model selection** — `/side-model` picks model for side chat only
 
 ### Configuration (config.json)
+
 ```json
 {
   "shortcut": "alt+/",
@@ -200,6 +212,7 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 ```
 
 ### Limitations
+
 - One side chat at a time
 - Won't open on top of another visible overlay
 - Does not merge messages back into main thread
@@ -213,17 +226,20 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 **Purpose**: Simple mode toggle between planning and building phases. Every session starts in plan mode.
 
 ### Commands
+
 ```
 /plan      # Switch to plan mode (planning phase)
 /build     # Switch to build mode (implementation phase)
 ```
 
 ### Shortcut
-| Key | Action |
-|-----|--------|
+
+| Key     | Action                                   |
+| ------- | ---------------------------------------- |
 | `Alt+T` | Quick toggle between plan and build mode |
 
 ### Behavior
+
 - **Plan mode** (default): For planning, designing, researching
 - **Build mode**: For implementation, coding, testing
 - Mode persists to `mode.json` and survives across API calls within a session
@@ -239,22 +255,25 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 ### Tool: `todo`
 
 ### Actions
-| Action | Parameters | Description |
-|--------|------------|-------------|
-| `list` | — | Show all todos |
-| `add` | `text` | Append a new todo |
-| `insert` | `text`, `position?` | Insert at position (0-based, omit to append) |
-| `edit` | `id`, `text` | Update todo text |
-| `remove` | `id` | Delete a todo |
-| `setStatus` | `id`, `status` | Set status: `pending` \| `in_progress` \| `completed` |
-| `clear` | — | Clear all todos |
+
+| Action      | Parameters          | Description                                           |
+| ----------- | ------------------- | ----------------------------------------------------- |
+| `list`      | —                   | Show all todos                                        |
+| `add`       | `text`              | Append a new todo                                     |
+| `insert`    | `text`, `position?` | Insert at position (0-based, omit to append)          |
+| `edit`      | `id`, `text`        | Update todo text                                      |
+| `remove`    | `id`                | Delete a todo                                         |
+| `setStatus` | `id`, `status`      | Set status: `pending` \| `in_progress` \| `completed` |
+| `clear`     | —                   | Clear all todos                                       |
 
 ### Enforcement Rules (enforced by tool)
+
 1. **Sequential order**: An item can only start (`in_progress`) once every earlier item is `completed`
 2. **Single in_progress**: Only one item can be `in_progress` at a time (starting another demotes the previous to `pending`)
 3. **Use edit/insert/remove** to reorganize instead of skipping ahead
 
 ### Guidelines (for LLM)
+
 - Use for any task taking more than one step
 - Break task into concrete items with `add` before starting work
 - Mark one `in_progress` at a time; set to `completed` immediately when done
@@ -262,6 +281,7 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 - Only skip for trivial single-step requests
 
 ### UI
+
 - **Live panel**: Appears above editor automatically when todos exist
 - **Animated indicators**: Pulses while `in_progress`, settles to dot when `completed`
 - **Shows**: `✓` completed, `▶` in_progress, `○` pending with todo ID and text
@@ -270,14 +290,16 @@ pi install npm:@nguyenquangthai/pi-omp-theme
 
 ## Loading Extensions
 
-These extensions are loaded automatically from `C:/Users/Jun Pu/.pi/agent/extensions/` when Pi starts.
+These extensions are loaded automatically from `~/.pi/agent/extensions/` when Pi starts.
 
 To verify they're loaded:
+
 ```
 /extensions  # or check pi list
 ```
 
 To reload after changes:
+
 ```
 /extensions reload
 ```
@@ -289,20 +311,11 @@ To reload after changes:
 Each extension is a single `index.ts` file (except pi-omp-theme and pi-side-chat which have multiple modules). They use the Pi Extension API (`@earendil-works/pi-coding-agent`) and TUI components (`@earendil-works/pi-tui`).
 
 ### Extension Structure
+
 ```
 extension-name/
 ├── index.ts          # Main entry point (required)
 ├── *.ts              # Additional modules (optional)
 ├── config.json       # Extension config (optional)
-├── README.md         # Documentation (optional)
-└── mode.json         # Persistent state (plan-build-mode only)
+└── README.md         # Documentation (optional)
 ```
-
-### Key APIs Used
-- `pi.registerCommand()` — Slash commands
-- `pi.registerShortcut()` — Keyboard shortcuts
-- `pi.registerTool()` — LLM tools
-- `pi.on("session_start", ...)` — Session lifecycle
-- `ctx.ui.custom()` — Custom TUI overlays/widgets
-- `ctx.ui.setWidget()` — Persistent UI panels
-- `ctx.modelRegistry.complete()` — Model completions

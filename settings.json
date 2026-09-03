@@ -7,7 +7,7 @@
   "defaultProvider": "claude-bridge",
   "defaultModel": "claude-sonnet-5",
   "defaultThinkingLevel": "low",
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "piOmpTheme": {
     "statusLine": {
       "layout": {

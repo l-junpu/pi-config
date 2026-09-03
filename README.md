@@ -12,9 +12,9 @@ This folder contains 7 local extensions for Pi. Each extension adds functionalit
 | **pi-omp-theme**    | Theme/UI         | OMP-inspired visual theme with Titanium dark/light, custom status line, editor, tool rendering |
 | **pi-questions**    | Tool             | Interactive questionnaire for clarifying requirements via single or multi-question pickers     |
 | **pi-side-chat**    | Overlay/Command  | Fork conversation into a side chat while main agent keeps working                              |
-| **plan-build-mode** | Command/Shortcut | Toggle between planning and building modes with persistent state                               |
-| **resource-toggler** | Command/Overlay  | Tabbed TUI to enable/disable Tools, Skills, and Extensions                                      |
-| **todo-list**       | Tool/Widget      | Todo management tool with live-updating panel above the editor                                 |
+| **pi-plan-build-mode** | Command/Shortcut | Toggle between planning and building modes with persistent state                               |
+| **pi-resource-toggler** | Command/Overlay  | Tabbed TUI to enable/disable Tools, Skills, and Extensions                                      |
+| **pi-todo-list**       | Tool/Widget      | Todo management tool with live-updating panel above the editor                                 |
 
 ---
 
@@ -222,7 +222,7 @@ The generated prompt contains exactly three sections:
 
 ---
 
-## plan-build-mode
+## pi-plan-build-mode
 
 **Purpose**: Simple mode toggle between planning and building phases. Every session starts in plan mode.
 
@@ -249,7 +249,7 @@ The generated prompt contains exactly three sections:
 
 ---
 
-## resource-toggler
+## pi-resource-toggler
 
 **Purpose**: Tabbed TUI for managing which Tools, Skills, and Extensions are active, without hand-editing `settings.json` or session state.
 
@@ -280,12 +280,12 @@ The generated prompt contains exactly three sections:
 
 - Toggling a Skill/Extension triggers `ctx.reload()` to apply the change; the dialog simply closes rather than reopening automatically.
 - Items with a naming collision (same name found both enabled and disabled in the same root) are shown in a distinct color, labeled `collision`, and locked from toggling until resolved manually on disk.
-- The `resource-toggler` extension itself is always shown as "always on (required)" so it can't disable itself.
+- The `pi-resource-toggler` extension itself is always shown as "always on (required)" so it can't disable itself.
 - Enabled/disabled/collision states are color-coded (green/red/yellow) for readability.
 
 ---
 
-## todo-list
+## pi-todo-list
 
 **Purpose**: Todo management for multi-step tasks. Registers a `todo` tool for the LLM and shows a persistent live-updating panel above the editor whenever the list is non-empty.
 

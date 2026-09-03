@@ -1,6 +1,7 @@
-backup/
+npm-cache/
 external-references/
 sessions/
+backup/
 state/
 tmp/
 

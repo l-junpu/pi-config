@@ -1,0 +1,43 @@
+{
+  "lastChangelogVersion": "0.84.4",
+  "packages": [
+    "npm:pi-undo-redo",
+    "npm:pi-claude-bridge"
+  ],
+  "defaultProvider": "claude-bridge",
+  "defaultModel": "claude-sonnet-5",
+  "defaultThinkingLevel": "low",
+  "hideThinkingBlock": true,
+  "piOmpTheme": {
+    "statusLine": {
+      "layout": {
+        "left": [
+          "model_effort",
+          "path",
+          "git",
+          "plan_build_mode"
+        ],
+        "right": [
+          "claude_context"
+        ],
+        "secondary": []
+      },
+      "customItems": [
+        {
+          "id": "plan_build_mode",
+          "statusKey": "planBuildMode",
+          "placement": "left"
+        }
+      ]
+    }
+  },
+  "theme": "titanium",
+  "compaction": {
+    "enabled": false
+  },
+  "undoRedo": {
+    "largeFileLimitBytes": 4194304,
+    "gitTimeoutMs": 30000,
+    "enabled": true
+  }
+}

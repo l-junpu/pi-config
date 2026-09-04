@@ -11,7 +11,8 @@ Delegate tasks to specialized subagents with isolated context windows.
 - **Usage tracking**: Shows turns, tokens, cost, and context usage per agent
 - **Abort support**: Ctrl+C propagates to kill subagent processes
 - **Live fleet widget**: A persistent panel above the editor (styled like the todo-list widget) shows every subagent run this process — running and finished, foreground and background
-- **Fleet browser**: `/subagents` lists every run (past and present) and lets you preview a run's full context (task, tool calls, transcript, usage)
+- **Fleet browser**: `/show-subagents` opens a popup with every run (past and present) and lets you preview a run's full context (task, tool calls, transcript, usage)
+- **Model fallback**: If an agent's configured model isn't one you're actually authenticated for, the subagent automatically retries once using the main session's own model instead of failing outright
 
 ## Structure
 
@@ -149,6 +150,21 @@ Project agents override user agents with the same name when `agentScope: "both"`
 | `scout` | Fast codebase recon | Haiku | read, grep, find, ls, bash |
 | `planner` | Implementation plans | Sonnet | read, grep, find, ls |
 | `reviewer` | Code review | Sonnet | read, grep, find, ls, bash |
+
+## Fleet Inspector (`/show-subagents`)
+
+Opens a popup with two panels side by side: agent list on the left, selected run's live context on the right. The focused panel's border lights up so it's clear which one your keys control.
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Switch focus between the agent list and the context panel |
+| `↑` / `↓` (or `j`/`k`) | Select an agent (list focused) or scroll context (context focused) |
+| `PgUp` / `PgDn` | Page-scroll the context panel |
+| `x` | Toggle raw tool-call arguments |
+| `D` | Stop a running background subagent |
+| `s` | Ask the main agent to summarize a finished background run |
+| `r` | Refresh |
+| `Esc` | Close |
 
 ## Workflow Prompts
 

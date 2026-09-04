@@ -1,6 +1,6 @@
 # Pi Extensions
 
-This folder contains 7 local extensions for Pi. Each extension adds functionality to the Pi coding agent.
+This folder contains 8 local extensions for Pi. Each extension adds functionality to the Pi coding agent.
 
 ---
 
@@ -13,7 +13,8 @@ This folder contains 7 local extensions for Pi. Each extension adds functionalit
 | **pi-questions**    | Tool             | Interactive questionnaire for clarifying requirements via single or multi-question pickers     |
 | **pi-side-chat**    | Overlay/Command  | Fork conversation into a side chat while main agent keeps working                              |
 | **pi-plan-build-mode** | Command/Shortcut | Toggle between planning and building modes with persistent state                               |
-| **pi-resource-toggler** | Command/Overlay  | Tabbed TUI to enable/disable Tools, Skills, and Extensions                                      |
+| **pi-resource-toggler** | Command/Popup  | Two-panel popup to enable/disable Tools, Skills, and Extensions                                   |
+| **pi-subagents**       | Tool/Widget/Popup | Delegate tasks to isolated subagent processes; browse runs in a fleet inspector popup            |
 | **pi-todo-list**       | Tool/Widget      | Todo management tool with live-updating panel above the editor                                 |
 
 ---
@@ -251,27 +252,29 @@ The generated prompt contains exactly three sections:
 
 ## pi-resource-toggler
 
-**Purpose**: Tabbed TUI for managing which Tools, Skills, and Extensions are active, without hand-editing `settings.json` or session state.
+**Purpose**: Popup for managing which Tools, Skills, and Extensions are active, without hand-editing `settings.json` or session state.
 
 ### Commands
 
 ```
-/resources   # Open the Tools / Skills / Extensions tabs
+/resources   # Open the resource popup
 ```
 
 ### Controls
 
-| Key         | Action                          |
-| ----------- | -------------------------------- |
-| ←/→         | Switch between Tools/Skills/Extensions tabs |
-| ↑/↓         | Move selection (skips section headers, wraps around) |
-| Enter/Space | Toggle enabled/disabled          |
-| Esc         | Save and close                   |
+Two panels side by side: categories (Tools/Skills/Extensions) on the left, the selected category's toggle list on the right. The focused panel's border lights up.
 
-### Tabs
+| Key         | Action                                                |
+| ----------- | ------------------------------------------------------ |
+| ←/→         | Switch focus between the categories panel and the items panel |
+| ↑/↓         | Select a category (categories focused) or an item (items focused) |
+| Enter/Space | Toggle the selected item                                |
+| Esc         | Save and close                                          |
+
+### Categories
 
 - **Tools** — enable/disable any registered tool via `ExtensionAPI.setActiveTools()`. Persists per session branch and restores on session start/tree navigation.
-- **Skills** / **Extensions** — three sections each:
+- **Skills** / **Extensions** — two kinds of entries:
   - *Explicit settings paths* — toggling adds/removes the path from `settings.skills` / `settings.extensions` (non-destructive).
   - *Global* (`~/.pi/agent/{skills,extensions}`) and *Project* (`.pi/{skills,extensions}`) — toggling physically moves the item into (or out of) a sibling `.disabled/` folder, so default-directory items can be disabled individually.
   - Package-sourced skills/extensions are always enabled and not shown as toggleable.
@@ -282,6 +285,46 @@ The generated prompt contains exactly three sections:
 - Items with a naming collision (same name found both enabled and disabled in the same root) are shown in a distinct color, labeled `collision`, and locked from toggling until resolved manually on disk.
 - The `pi-resource-toggler` extension itself is always shown as "always on (required)" so it can't disable itself.
 - Enabled/disabled/collision states are color-coded (green/red/yellow) for readability.
+
+---
+
+## pi-subagents
+
+**Purpose**: Delegate tasks to specialized subagents, each running in its own isolated `pi` process (single, parallel, chain, or background).
+
+### Tool: `subagent`
+
+Modes: `{ agent, task }` (single), `{ tasks: [...] }` (parallel), `{ chain: [...] }` (sequential with `{previous}` placeholder), plus `async: true` for background dispatch.
+
+### Commands
+
+```
+/show-subagents   # Open the fleet inspector popup
+```
+
+### Fleet Inspector Controls
+
+Two panels side by side: agent list on the left, the selected run's live context on the right. The focused panel's border lights up.
+
+| Key         | Action                                                       |
+| ----------- | -------------------------------------------------------------- |
+| ←/→         | Switch focus between the agent list and the context panel      |
+| ↑/↓ (j/k)   | Select an agent (list focused) or scroll context (context focused) |
+| PgUp/PgDn   | Page-scroll the context panel                                  |
+| x           | Toggle raw tool-call arguments                                  |
+| D           | Stop a running background subagent                              |
+| s           | Ask the main agent to summarize a finished background run       |
+| r           | Refresh                                                          |
+| Esc         | Close                                                            |
+
+### Features
+
+- **Isolated context** — each subagent runs in a separate `pi` process.
+- **Live fleet widget** — a persistent panel above the editor shows every subagent run this process, running and finished, foreground and background.
+- **Model fallback** — if an agent's configured model isn't one you're authenticated for, the subagent automatically retries once using the main session's own model instead of failing outright.
+- **Background dispatch** — `async: true` runs a subagent independently and delivers the result quietly on success, or notifies immediately on failure.
+
+Agents are markdown files with YAML frontmatter (`name`, `description`, `tools`, `model`) under `~/.pi/agent/agents/*.md` (user-level) or `.pi/agents/*.md` (project-level, requires `agentScope: "project"`/`"both"`).
 
 ---
 

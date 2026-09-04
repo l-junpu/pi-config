@@ -2,12 +2,13 @@
   "lastChangelogVersion": "0.84.4",
   "packages": [
     "npm:pi-undo-redo",
-    "npm:pi-claude-bridge"
+    "npm:pi-claude-bridge",
+    "npm:pi-web-access"
   ],
   "defaultProvider": "claude-bridge",
   "defaultModel": "claude-sonnet-5",
   "defaultThinkingLevel": "low",
-  "hideThinkingBlock": true,
+  "hideThinkingBlock": false,
   "piOmpTheme": {
     "statusLine": {
       "layout": {

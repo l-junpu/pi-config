@@ -16,7 +16,7 @@
 import type { ExtensionAPI, ExtensionContext, SettingsManager, ToolInfo } from "@earendil-works/pi-coding-agent";
 import { CONFIG_DIR_NAME, DefaultResourceLoader, getAgentDir, getSettingsListTheme } from "@earendil-works/pi-coding-agent";
 import type { Component, SettingItem, SettingsListTheme } from "@earendil-works/pi-tui";
-import { parseKey, SettingsList } from "@earendil-works/pi-tui";
+import { parseKey, SettingsList, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -396,8 +396,9 @@ export default function resourceTogglerExtension(pi: ExtensionAPI) {
 		allTools = pi.getAllTools();
 		let needsReload = false;
 		let activeTab = 0;
+		let focus: "categories" | "items" = "categories";
 
-		await ctx.ui.custom((tui, theme, _kb, done) => {
+		await ctx.ui.custom<void>((tui, theme, _kb, done) => {
 			const baseTheme = getSettingsListTheme();
 			const statusColors: Record<string, "success" | "error" | "warning"> = {
 				enabled: "success",
@@ -405,11 +406,18 @@ export default function resourceTogglerExtension(pi: ExtensionAPI) {
 				disabled: "error",
 				collision: "warning",
 			};
+			// Suppress the items list's own cursor/highlight while keyboard focus is on the
+			// categories panel, so only one panel ever shows a selection indicator at a time.
 			const theme_: SettingsListTheme = {
 				...baseTheme,
+				label: (text, selected) => baseTheme.label(text, selected && focus === "items"),
 				value: (text, selected) => {
 					const color = statusColors[text];
-					return color ? theme.fg(color, text) : baseTheme.value(text, selected);
+					if (color) return theme.fg(color, text);
+					return baseTheme.value(text, selected && focus === "items");
+				},
+				get cursor() {
+					return focus === "items" ? baseTheme.cursor : "  ";
 				},
 			};
 			const lists: SettingsList[] = [];
@@ -430,7 +438,7 @@ export default function resourceTogglerExtension(pi: ExtensionAPI) {
 			function makeToolsList(): SettingsList {
 				const items = buildToolItems();
 				itemsByTab[0] = items;
-				const list = new SettingsList(items, 12, theme_, (id, newValue) => {
+				const list = new SettingsList(items, 50, theme_, (id, newValue) => {
 					if (newValue === "enabled") enabledTools.add(id);
 					else enabledTools.delete(id);
 					applyTools();
@@ -443,7 +451,7 @@ export default function resourceTogglerExtension(pi: ExtensionAPI) {
 			function makeSkillsList(): SettingsList {
 				const items = buildSkillItems(ctx);
 				itemsByTab[1] = items;
-				const list = new SettingsList(items, 14, theme_, (id, newValue) => {
+				const list = new SettingsList(items, 50, theme_, (id, newValue) => {
 					if (id.startsWith("header:")) return;
 					const result = handleSkillToggle(ctx, id, newValue);
 					if (!result.ok) {
@@ -463,7 +471,7 @@ export default function resourceTogglerExtension(pi: ExtensionAPI) {
 			function makeExtensionsList(): SettingsList {
 				const items = buildExtensionItems(ctx);
 				itemsByTab[2] = items;
-				const list = new SettingsList(items, 14, theme_, (id, newValue) => {
+				const list = new SettingsList(items, 50, theme_, (id, newValue) => {
 					if (id.startsWith("header:")) return;
 					const result = handleExtensionToggle(ctx, id, newValue);
 					if (!result.ok) {
@@ -495,34 +503,99 @@ export default function resourceTogglerExtension(pi: ExtensionAPI) {
 				currentIdByTab[activeTab] = nextId;
 			}
 
+			/** A single independently-bordered panel. Border color reflects whether this panel currently has keyboard focus. */
+			function box(title: string, contentLines: string[], colWidth: number, focused: boolean): string[] {
+				const borderColor = focused ? "border" : "borderMuted";
+				const outerWidth = colWidth + 4;
+				const titlePart = `${theme.fg(borderColor, "┌─ ")}${focused ? theme.bold(theme.fg("accent", title)) : theme.fg("dim", title)}${theme.fg(borderColor, " ")}`;
+				const titleFill = Math.max(0, outerWidth - visibleWidth(titlePart) - 1);
+				const lines: string[] = [titlePart + theme.fg(borderColor, "─".repeat(titleFill) + "┐")];
+				for (const line of contentLines) {
+					lines.push(theme.fg(borderColor, "│ ") + truncateToWidth(line, colWidth, "...", true) + theme.fg(borderColor, " │"));
+				}
+				lines.push(theme.fg(borderColor, "└" + "─".repeat(outerWidth - 2) + "┘"));
+				return lines;
+			}
+
+			const CATEGORIES_COLUMN_WIDTH = 16;
+
 			const component: Component = {
 				render(width: number) {
-					const tabLine = TABS.map((label, i) =>
-						i === activeTab ? theme.fg("accent", theme.bold(`[${label}]`)) : theme.fg("dim", ` ${label} `),
-					).join("  ");
-					const hint = theme.fg("dim", "←/→: switch section  Enter/Space: toggle  Esc: close");
-					return [theme.fg("accent", theme.bold("Resource Configuration")), tabLine, hint, "", ...lists[activeTab].render(width)];
+					const innerWidth = Math.max(1, width - 4); // interior of the outer "│ " ... " │"
+					const gap = 2;
+					const categoriesWidth = Math.max(10, Math.min(CATEGORIES_COLUMN_WIDTH, innerWidth - gap - 18));
+					const itemsWidth = Math.max(10, innerWidth - (categoriesWidth + 4) - gap - 4);
+					const rows = Math.floor(tui.terminal.rows * 0.5);
+					const chromeLines = 5; // outer top/bottom + hint line + panel top/bottom borders
+					const bodyRows = Math.max(4, rows - chromeLines);
+
+					const inner: string[] = [];
+
+					const categoryLines = TABS.map((label, i) => {
+						const isActiveCategory = i === activeTab;
+						const cursor = focus === "categories" && isActiveCategory ? theme.fg("accent", "→ ") : "  ";
+						const text = isActiveCategory ? theme.fg("accent", label) : theme.fg("muted", label);
+						return truncateToWidth(`${cursor}${text}`, categoriesWidth, "...", true);
+					});
+					for (let i = categoryLines.length; i < bodyRows; i++) categoryLines.push(truncateToWidth("", categoriesWidth, "", true));
+
+					const rawItemLines = lists[activeTab].render(itemsWidth);
+					const itemLines = rawItemLines.slice(0, bodyRows).map((l) => truncateToWidth(l, itemsWidth, "...", true));
+					for (let i = itemLines.length; i < bodyRows; i++) itemLines.push(truncateToWidth("", itemsWidth, "", true));
+
+					const categoriesBox = box("Categories", categoryLines, categoriesWidth, focus === "categories");
+					const itemsBox = box(TABS[activeTab], itemLines, itemsWidth, focus === "items");
+					const gapStr = " ".repeat(gap);
+					for (let i = 0; i < categoriesBox.length; i++) inner.push(`${categoriesBox[i]}${gapStr}${itemsBox[i]}`);
+
+					const hints =
+						focus === "categories"
+							? "↑↓ select category · → switch to items · Esc close"
+							: "↑↓ select item · ← switch to categories · Enter/Space toggle · Esc close";
+					inner.push(theme.fg("dim", hints));
+
+					// Outer border wraps both panels so the whole thing reads clearly as one popup.
+					const titlePart = `${theme.fg("border", "┌─ ")}${theme.bold("Resource Configuration")}${theme.fg("border", " ")}`;
+					const titleFill = Math.max(0, width - visibleWidth(titlePart) - 1);
+					const lines: string[] = [titlePart + theme.fg("border", "─".repeat(titleFill) + "┐")];
+					for (const line of inner) {
+						lines.push(theme.fg("border", "│ ") + truncateToWidth(line, innerWidth, "...", true) + theme.fg("border", " │"));
+					}
+					lines.push(theme.fg("border", "└" + "─".repeat(width - 2) + "┘"));
+
+					return lines.map((l) => (visibleWidth(l) > width ? truncateToWidth(l, width) : l));
 				},
 				invalidate() {
 					for (const l of lists) l.invalidate();
 				},
 				handleInput(data: string) {
 					const key = parseKey(data);
-					if (key === "right") {
-						activeTab = (activeTab + 1) % TABS.length;
-					} else if (key === "left") {
-						activeTab = (activeTab - 1 + TABS.length) % TABS.length;
-					} else if (key === "down") {
-						moveSelection(1);
-					} else if (key === "up") {
-						moveSelection(-1);
+					if (key === "escape") {
+						done(undefined);
+						return;
+					}
+					if (focus === "categories") {
+						if (key === "up") activeTab = (activeTab - 1 + TABS.length) % TABS.length;
+						else if (key === "down") activeTab = (activeTab + 1) % TABS.length;
+						else if (key === "right") focus = "items";
 					} else {
-						lists[activeTab].handleInput?.(data);
+						if (key === "left") focus = "categories";
+						else if (key === "up") moveSelection(-1);
+						else if (key === "down") moveSelection(1);
+						else if (key !== "right") lists[activeTab].handleInput?.(data);
 					}
 					tui.requestRender();
 				},
 			};
 			return component;
+		}, {
+			overlay: true,
+			overlayOptions: {
+				width: "60%",
+				maxHeight: "50%",
+				anchor: "top-center",
+				margin: { top: 1, left: 2, right: 2 },
+			},
 		});
 
 		if (needsReload) {

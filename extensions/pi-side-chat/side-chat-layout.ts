@@ -17,8 +17,8 @@ export function getOverlayOptions(mode: DisplayMode): OverlayOptions {
   }
 
   return {
-    width: "85%",
-    maxHeight: "35%",
+    width: "60%",
+    maxHeight: "50%",
     anchor: "top-center",
     margin: { top: 1, left: 2, right: 2 },
     nonCapturing: true,
@@ -32,7 +32,7 @@ export function getMaxMessageLines(
 ): number {
   const targetHeight = mode === "fullscreen"
     ? terminalRows
-    : Math.floor(terminalRows * 0.35);
+    : Math.floor(terminalRows * 0.5);
 
   const minimum = mode === "fullscreen" ? 0 : MIN_COMPACT_MESSAGE_LINES;
   return Math.max(minimum, targetHeight - editorLines - FIXED_CHROME_LINES);

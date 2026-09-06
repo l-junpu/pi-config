@@ -4,15 +4,20 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { CONFIG_DIR_NAME, getAgentDir, parseFrontmatter } from "@earendil-works/pi-coding-agent";
+import { CONFIG_DIR_NAME, getAgentDir, loadSkills, parseFrontmatter } from "@earendil-works/pi-coding-agent";
 
 export type AgentScope = "user" | "project" | "both";
+
+/** true = inherit the child's normal skill discovery; false = no skills; string[] = only those named skills. */
+export type AgentSkillsConfig = true | false | string[];
 
 export interface AgentConfig {
 	name: string;
 	description: string;
 	tools?: string[];
 	model?: string;
+	/** Defaults to `true` (inherit) when omitted -- see `resolveSkills`. */
+	skills?: AgentSkillsConfig;
 	systemPrompt: string;
 	source: "user" | "project";
 	filePath: string;
@@ -36,6 +41,7 @@ type AgentFrontmatter = {
 	description?: unknown;
 	tools?: unknown;
 	model?: unknown;
+	skills?: unknown;
 };
 
 /**
@@ -57,6 +63,28 @@ function parseToolList(value: unknown): string[] | undefined {
 		.map((t) => t.trim())
 		.filter(Boolean);
 	return tools.length > 0 ? tools : undefined;
+}
+
+/**
+ * Normalize a frontmatter `skills` value.
+ *
+ *     skills: true             # inherit the child's normal discovery (default)
+ *     skills: false            # no skills at all
+ *     skills: scout, review    # only these named skills (string)
+ *     skills: [scout, review]  # only these named skills (array)
+ *
+ * A malformed value (a number, a map) falls back to `undefined`, which
+ * `resolveSkills` treats the same as `true` -- an agent file typo here
+ * should degrade to normal discovery, not silently strip every skill.
+ */
+function parseSkillsConfig(value: unknown): AgentSkillsConfig | undefined {
+	if (value === true || value === false) return value;
+	const raw = Array.isArray(value) ? value : typeof value === "string" ? value.split(",") : [];
+	const names = raw
+		.filter((s): s is string => typeof s === "string")
+		.map((s) => s.trim())
+		.filter(Boolean);
+	return names.length > 0 ? names : undefined;
 }
 
 function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig[] {
@@ -96,6 +124,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
 			description: frontmatter.description,
 			tools: parseToolList(frontmatter.tools),
 			model: typeof frontmatter.model === "string" ? frontmatter.model : undefined,
+			skills: parseSkillsConfig(frontmatter.skills),
 			systemPrompt: body,
 			source,
 			filePath,
@@ -144,6 +173,43 @@ export function discoverAgents(cwd: string, scope: AgentScope): AgentDiscoveryRe
 	}
 
 	return { agents: Array.from(agentMap.values()), projectAgentsDir };
+}
+
+export interface ResolvedSkills {
+	/** CLI flags to append to the subagent's `pi` invocation. */
+	args: string[];
+	/** Human-readable summary for display (fleet inspector, widget). */
+	display: string;
+}
+
+/**
+ * Turn an agent's `skills` config into CLI flags for the subagent's `pi`
+ * subprocess, plus a display summary for the fleet inspector. `--skill
+ * <path>` / `--no-skills` are pi's own flags -- this extension does not read
+ * or inject skill content itself, it only scopes which of the child's
+ * normally-discovered skills actually load.
+ *
+ * - `undefined` / `true`: no flags -- child does its own normal discovery.
+ * - `false`: `--no-skills`.
+ * - `string[]`: resolve each name against the same locations pi itself
+ *   scans (`.pi/skills`, `~/.pi/agent/skills`, etc. via `loadSkills`), then
+ *   `--no-skills` plus one `--skill <dir>` per match -- so unlisted skills
+ *   the child would otherwise have found are excluded, not merely unlisted.
+ *   A name that resolves to nothing is dropped silently: a typo in
+ *   `skills:` should shrink the set, not crash the agent.
+ */
+export function resolveSkills(cwd: string, skills: AgentSkillsConfig | undefined): ResolvedSkills {
+	if (skills === undefined || skills === true) return { args: [], display: "inherited (default discovery)" };
+	if (skills === false) return { args: ["--no-skills"], display: "none" };
+
+	const wanted = new Set(skills.map((s) => s.toLowerCase()));
+	const { skills: discovered } = loadSkills({ cwd, agentDir: getAgentDir(), skillPaths: [], includeDefaults: true });
+	const matched = discovered.filter((s) => wanted.has(s.name.toLowerCase()));
+
+	const args = ["--no-skills"];
+	for (const skill of matched) args.push("--skill", skill.baseDir);
+	const display = matched.length > 0 ? matched.map((s) => s.name).join(", ") : "none (no configured skills resolved)";
+	return { args, display };
 }
 
 export function formatAgentList(agents: AgentConfig[], maxItems: number): { text: string; remaining: number } {

@@ -41,7 +41,7 @@ import {
 	wrapTextWithAnsi,
 } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
+import { type AgentConfig, type AgentScope, discoverAgents, resolveSkills } from "./agents.ts";
 
 const DEFAULT_MAX_PARALLEL_TASKS = 8;
 const DEFAULT_MAX_CONCURRENCY = 4;
@@ -51,6 +51,8 @@ const PER_TASK_OUTPUT_CAP = 50 * 1024;
 interface SubagentToolConfig {
 	maxParallelTasks: number;
 	maxConcurrentSubagents: number;
+	/** Override for where subagent session files are written. Supports a leading "~". Unset uses the default (nested under the parent session's own directory, falling back to the OS tmpdir). */
+	sessionsDir?: string;
 }
 
 /** Coerce a config value to a positive integer, falling back to `fallback` if invalid. */
@@ -78,6 +80,7 @@ function loadSubagentToolConfig(): SubagentToolConfig {
 	return {
 		maxParallelTasks: coercePositiveInt(obj.maxParallelTasks, DEFAULT_MAX_PARALLEL_TASKS),
 		maxConcurrentSubagents: coercePositiveInt(obj.maxConcurrentSubagents, DEFAULT_MAX_CONCURRENCY),
+		sessionsDir: typeof obj.sessionsDir === "string" && obj.sessionsDir.trim() ? obj.sessionsDir.trim() : undefined,
 	};
 }
 
@@ -201,11 +204,15 @@ interface SingleResult {
 	stderr: string;
 	usage: UsageStats;
 	model?: string;
+	/** Human-readable summary of which skills this run's subprocess had available. */
+	skills?: string;
 	stopReason?: string;
 	errorMessage?: string;
 	step?: number;
 	/** True if the agent's own model failed to produce any output and this result came from retrying with the main session's model instead. */
 	usedFallbackModel?: boolean;
+	/** Session file this run was persisted to, for later `resume`. Absent for parallel/chain steps, which aren't resumable. */
+	sessionPath?: string;
 }
 
 interface SubagentDetails {
@@ -342,6 +349,68 @@ function resolveAgentModel(agentModel: string | undefined, dispatchDefaults: Dis
 	return dispatchDefaults.model ?? agentModel;
 }
 
+interface AccumulatedRun {
+	messages: Message[];
+	usage: UsageStats;
+	model?: string;
+	stopReason?: string;
+	errorMessage?: string;
+}
+
+/**
+ * Shared by the live stdout-event stream (`processLine` below) and by rehydrating a
+ * finished run's messages/usage straight from its session `.jsonl` file (see
+ * `loadRunFromSessionFile`) -- both feed the same `Message` shape into the same fields.
+ */
+function accumulateMessage(target: AccumulatedRun, msg: Message): void {
+	target.messages.push(msg);
+	if (msg.role !== "assistant") return;
+	target.usage.turns++;
+	const usage = msg.usage;
+	if (usage) {
+		target.usage.input += usage.input || 0;
+		target.usage.output += usage.output || 0;
+		target.usage.cacheRead += usage.cacheRead || 0;
+		target.usage.cacheWrite += usage.cacheWrite || 0;
+		target.usage.cost += usage.cost?.total || 0;
+		target.usage.contextTokens = usage.totalTokens || 0;
+	}
+	if (!target.model && msg.model) target.model = msg.model;
+	if (msg.stopReason) target.stopReason = msg.stopReason;
+	if (msg.errorMessage) target.errorMessage = msg.errorMessage;
+}
+
+/**
+ * Parses a subagent's persisted session file back into the same shape a live run
+ * builds incrementally, for rehydrating resumable runs across a pi process restart.
+ * Returns undefined if the file is missing or unreadable -- callers should skip
+ * that run rather than treat it as a fatal error.
+ */
+function loadRunFromSessionFile(sessionPath: string): AccumulatedRun | undefined {
+	let raw: string;
+	try {
+		raw = fs.readFileSync(sessionPath, "utf-8");
+	} catch {
+		return undefined;
+	}
+	const result: AccumulatedRun = { messages: [], usage: emptyUsageStats() };
+	for (const line of raw.split("\n")) {
+		if (!line.trim()) continue;
+		let entry: any;
+		try {
+			entry = JSON.parse(line);
+		} catch {
+			continue;
+		}
+		if (entry.type === "message" && entry.message) accumulateMessage(result, entry.message as Message);
+	}
+	return result;
+}
+
+function emptyUsageStats(): UsageStats {
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 };
+}
+
 /** A single spawn-and-wait attempt against an explicit, already-resolved model. No fallback logic here -- that lives in runSingleAgent. */
 async function runSingleAgentAttempt(
 	defaultCwd: string,
@@ -354,15 +423,23 @@ async function runSingleAgentAttempt(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	sessionPath: string,
 ): Promise<SingleResult> {
 	const agentName = agent.name;
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
+	// Subagents get no extensions by default: they're isolated, single-purpose
+	// dispatches that only need their configured built-in tools, not the parent
+	// session's extension set. `--session <path>` (rather than `--no-session`)
+	// persists the run to a file this extension controls, so a later call can
+	// pass the same path back in to resume the conversation.
+	const args: string[] = ["--mode", "json", "-p", "--session", sessionPath, "--no-extensions"];
 	const inheritsDispatchConfig = !agent.model;
 	if (model) args.push("--model", model);
 	if (inheritsDispatchConfig && dispatchDefaults.thinkingLevel) {
 		args.push("--thinking", dispatchDefaults.thinkingLevel);
 	}
 	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
+	const resolvedSkills = resolveSkills(cwd ?? defaultCwd, agent.skills);
+	args.push(...resolvedSkills.args);
 
 	let tmpPromptDir: string | null = null;
 	let tmpPromptPath: string | null = null;
@@ -376,7 +453,9 @@ async function runSingleAgentAttempt(
 		stderr: "",
 		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
 		model,
+		skills: resolvedSkills.display,
 		step,
+		sessionPath,
 	};
 
 	const emitUpdate = () => {
@@ -418,29 +497,12 @@ async function runSingleAgentAttempt(
 				}
 
 				if (event.type === "message_end" && event.message) {
-					const msg = event.message as Message;
-					currentResult.messages.push(msg);
-
-					if (msg.role === "assistant") {
-						currentResult.usage.turns++;
-						const usage = msg.usage;
-						if (usage) {
-							currentResult.usage.input += usage.input || 0;
-							currentResult.usage.output += usage.output || 0;
-							currentResult.usage.cacheRead += usage.cacheRead || 0;
-							currentResult.usage.cacheWrite += usage.cacheWrite || 0;
-							currentResult.usage.cost += usage.cost?.total || 0;
-							currentResult.usage.contextTokens = usage.totalTokens || 0;
-						}
-						if (!currentResult.model && msg.model) currentResult.model = msg.model;
-						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
-						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
-					}
+					accumulateMessage(currentResult, event.message as Message);
 					emitUpdate();
 				}
 
 				if (event.type === "tool_result_end" && event.message) {
-					currentResult.messages.push(event.message as Message);
+					accumulateMessage(currentResult, event.message as Message);
 					emitUpdate();
 				}
 			};
@@ -516,6 +578,7 @@ async function runSingleAgent(
 	signal: AbortSignal | undefined,
 	onUpdate: OnUpdateCallback | undefined,
 	makeDetails: (results: SingleResult[]) => SubagentDetails,
+	sessionPath: string,
 ): Promise<SingleResult> {
 	const agent = agents.find((a) => a.name === agentName);
 
@@ -535,14 +598,14 @@ async function runSingleAgent(
 
 	const model = resolveAgentModel(agent.model, dispatchDefaults);
 	const result = await runSingleAgentAttempt(
-		defaultCwd, dispatchDefaults, agent, model, task, cwd, step, signal, onUpdate, makeDetails,
+		defaultCwd, dispatchDefaults, agent, model, task, cwd, step, signal, onUpdate, makeDetails, sessionPath,
 	);
 
 	const canFallback = dispatchDefaults.model !== undefined && dispatchDefaults.model !== model;
 	if (!isFailedResult(result) || !canFallback) return result;
 
 	const fallbackResult = await runSingleAgentAttempt(
-		defaultCwd, dispatchDefaults, agent, dispatchDefaults.model, task, cwd, step, signal, onUpdate, makeDetails,
+		defaultCwd, dispatchDefaults, agent, dispatchDefaults.model, task, cwd, step, signal, onUpdate, makeDetails, sessionPath,
 	);
 	fallbackResult.usedFallbackModel = true;
 	fallbackResult.stderr = [result.stderr, fallbackResult.stderr].filter(Boolean).join("\n");
@@ -569,6 +632,15 @@ const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
 const SubagentParams = Type.Object({
 	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
 	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
+	resume: Type.Optional(
+		Type.String({
+			description:
+				"Single mode only. Run id of a previous single-mode run (foreground or background) to resume instead of " +
+				"starting fresh -- continues its conversation with full prior context. Omit \"agent\" when resuming; the " +
+				"original run's agent is reused. The referenced run must still be tracked this session (see the fleet " +
+				"inspector's [resumable] tag) and not currently running.",
+		}),
+	),
 	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
 	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of steps for sequential execution" })),
 	agentScope: Type.Optional(AgentScopeSchema),
@@ -612,8 +684,11 @@ interface RunRecord {
 	messages: Message[];
 	usage: UsageStats;
 	model?: string;
+	skills?: string;
 	stopReason?: string;
 	errorMessage?: string;
+	/** Session file this run is (or was) persisted to. Set for the lifetime of the process, so a later `resume` can hand the same path back to `pi --session`. */
+	sessionPath: string;
 }
 
 const MAX_TRACKED_RUNS = 50;
@@ -656,6 +731,43 @@ export default function (pi: ExtensionAPI) {
 	let sessionAlive = true;
 	const backgroundTasks = new Map<string, BackgroundTask>();
 
+	/**
+	 * Directory for subagent session files. Defaults to a sibling folder next to the
+	 * *parent* session's own file -- e.g. a persisted parent at
+	 * `~/.pi/agent/sessions/<cwd>/<parent-session>.jsonl` gets its subagents nested at
+	 * `~/.pi/agent/sessions/<cwd>/<parent-session>-subagents/<run-id>.jsonl` -- so they're
+	 * easy to find and get cleaned up alongside the parent. An ephemeral parent (no
+	 * persisted session file, e.g. `--no-session` or a one-shot `-p` run) has nothing to
+	 * nest under, so this falls back to the OS tmpdir instead. `sessionsDir` in
+	 * `pi-subagents.json` overrides either default with an explicit absolute path.
+	 */
+	function subagentSessionsDir(): string {
+		const configured = loadSubagentToolConfig().sessionsDir;
+		const dir = configured
+			? configured.replace(/^~(?=$|[/\\])/, os.homedir())
+			: (() => {
+					const parentFile = sessionCtx?.sessionManager.getSessionFile();
+					if (parentFile) return `${parentFile.slice(0, -path.extname(parentFile).length)}-subagents`;
+					return path.join(os.tmpdir(), "pi-subagents-sessions");
+				})();
+		fs.mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+
+	function newSubagentSessionPath(runId: string): string {
+		return path.join(subagentSessionsDir(), `${runId}.jsonl`);
+	}
+
+	/**
+	 * Lifecycle events on pi's shared event bus (`subagents:*`), so other
+	 * extensions can react to subagent activity without importing this one.
+	 * Mirrors tintinweb/pi-subagents' channel naming; safe to share the prefix
+	 * since this is the only extension in this environment using it.
+	 */
+	function emitSubagentEvent(channel: string, data: unknown): void {
+		pi.events.emit(`subagents:${channel}`, data);
+	}
+
 	// Unified history of every subagent run dispatched this process (foreground
 	// single/parallel/chain members and background runs alike), newest last.
 	// Backs both the persistent above-editor widget and the /subagents browser.
@@ -664,7 +776,12 @@ export default function (pi: ExtensionAPI) {
 	let fleetInspectorRefresh: (() => void) | undefined;
 	const emptyUsage = (): UsageStats => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 });
 
-	function trackRun(mode: RunRecord["mode"], agent: string, task: string, id?: string): string {
+	/**
+	 * `resumeSessionPath` carries a prior run's session file into this one (see the
+	 * `resume` tool param) so the two share the same conversation history; omitted for
+	 * a fresh run, which gets its own new session file.
+	 */
+	function trackRun(mode: RunRecord["mode"], agent: string, task: string, id?: string, resumeSessionPath?: string): string {
 		const runId = id ?? `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 		allRuns.set(runId, {
 			id: runId,
@@ -676,6 +793,7 @@ export default function (pi: ExtensionAPI) {
 			startedAt: Date.now(),
 			messages: [],
 			usage: emptyUsage(),
+			sessionPath: resumeSessionPath ?? newSubagentSessionPath(runId),
 		});
 		// Evict oldest finished runs once the cap is hit, keeping any still running.
 		if (allRuns.size > MAX_TRACKED_RUNS) {
@@ -683,6 +801,13 @@ export default function (pi: ExtensionAPI) {
 				if (allRuns.size <= MAX_TRACKED_RUNS) break;
 				if (run.status !== "running") allRuns.delete(key);
 			}
+		}
+		emitSubagentEvent("created", { id: runId, agent, mode, task, isBackground: mode === "background" });
+		// Foreground modes (single/parallel/chain) have no queue -- the subprocess
+		// spawns immediately, so "started" fires alongside "created". Background mode's
+		// own queue (acquireBackgroundSlot) emits "started" separately once a slot frees up.
+		if (mode !== "background") {
+			emitSubagentEvent("started", { id: runId, agent, mode, task });
 		}
 		syncSubagentWidget();
 		return runId;
@@ -695,8 +820,85 @@ export default function (pi: ExtensionAPI) {
 		run.messages = result.messages;
 		run.usage = result.usage;
 		run.model = result.model;
+		run.skills = result.skills;
 		run.stopReason = result.stopReason;
 		run.errorMessage = result.errorMessage;
+		syncSubagentWidget();
+	}
+
+	/**
+	 * Cross-restart resume relies on this: a run only becomes rehydratable after it
+	 * finishes successfully. Failed/cancelled runs never get a manifest, so they're
+	 * simply gone (not resumable, not shown as broken) once this process exits.
+	 */
+	function writeRunManifest(run: RunRecord): void {
+		try {
+			const manifestPath = run.sessionPath.replace(/\.jsonl$/, ".meta.json");
+			fs.writeFileSync(
+				manifestPath,
+				JSON.stringify({
+					id: run.id,
+					agent: run.agent,
+					agentSource: run.agentSource,
+					task: run.task,
+					mode: run.mode,
+					skills: run.skills,
+					startedAt: run.startedAt,
+					endedAt: run.endedAt,
+				}),
+				"utf-8",
+			);
+		} catch {
+			/* best-effort persistence -- resume within this process still works either way */
+		}
+	}
+
+	/**
+	 * On `session_start`, repopulate `allRuns` from any manifests left by a prior pi
+	 * process against the same parent session, so `resume` keeps working across restarts.
+	 */
+	function rehydrateRunsFromDisk(): void {
+		const dir = subagentSessionsDir();
+		let files: string[];
+		try {
+			files = fs.readdirSync(dir);
+		} catch {
+			return;
+		}
+		const manifests: Array<{ path: string; data: any }> = [];
+		for (const file of files) {
+			if (!file.endsWith(".meta.json")) continue;
+			try {
+				const data = JSON.parse(fs.readFileSync(path.join(dir, file), "utf-8"));
+				if (data && typeof data.id === "string") manifests.push({ path: path.join(dir, file), data });
+			} catch {
+				/* skip corrupt/partial manifest */
+			}
+		}
+		manifests.sort((a, b) => (b.data.startedAt ?? 0) - (a.data.startedAt ?? 0));
+		for (const { data } of manifests.slice(0, MAX_TRACKED_RUNS)) {
+			if (allRuns.has(data.id)) continue;
+			const sessionPath = path.join(dir, `${data.id}.jsonl`);
+			const parsed = loadRunFromSessionFile(sessionPath);
+			if (!parsed) continue;
+			allRuns.set(data.id, {
+				id: data.id,
+				agent: data.agent,
+				agentSource: data.agentSource ?? "unknown",
+				task: data.task,
+				mode: data.mode,
+				status: "done",
+				startedAt: data.startedAt,
+				endedAt: data.endedAt,
+				messages: parsed.messages,
+				usage: parsed.usage,
+				model: parsed.model,
+				skills: data.skills,
+				stopReason: parsed.stopReason,
+				errorMessage: parsed.errorMessage,
+				sessionPath,
+			});
+		}
 		syncSubagentWidget();
 	}
 
@@ -704,8 +906,20 @@ export default function (pi: ExtensionAPI) {
 		const run = allRuns.get(runId);
 		if (!run) return;
 		updateRunFromResult(runId, result);
-		run.status = isFailedResult(result) ? "failed" : "done";
+		const failed = isFailedResult(result);
+		run.status = failed ? "failed" : "done";
 		run.endedAt = Date.now();
+		if (!failed) writeRunManifest(run);
+		emitSubagentEvent(failed ? "failed" : "completed", {
+			id: run.id,
+			agent: run.agent,
+			mode: run.mode,
+			task: run.task,
+			status: run.status,
+			usage: run.usage,
+			durationMs: run.endedAt - run.startedAt,
+			errorMessage: run.errorMessage,
+		});
 		syncSubagentWidget();
 	}
 
@@ -731,8 +945,16 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
+	// Guards against re-emitting `subagents:ready` on a second bound session_start
+	// within the same activation (e.g. session resume/switch).
+	let subagentsReadyEmitted = false;
 	pi.on("session_start", async (_event, ctx) => {
 		sessionCtx = ctx;
+		rehydrateRunsFromDisk();
+		if (!subagentsReadyEmitted) {
+			subagentsReadyEmitted = true;
+			emitSubagentEvent("ready", {});
+		}
 	});
 	pi.on("agent_start", async () => {
 		sessionBusy = true;
@@ -876,11 +1098,13 @@ export default function (pi: ExtensionAPI) {
 		taskText: string,
 		cwd: string | undefined,
 		makeDetails: (mode: "single") => (results: SingleResult[]) => SubagentDetails,
+		resumeSessionPath?: string,
 	): AgentToolResult<SubagentDetails> {
 		const taskId = `bg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 		const controller = new AbortController();
 		backgroundTasks.set(taskId, { id: taskId, agent: agentName, task: taskText, status: "running", startedAt: Date.now(), controller });
-		trackRun("background", agentName, taskText, taskId);
+		trackRun("background", agentName, taskText, taskId, resumeSessionPath);
+		const sessionPath = allRuns.get(taskId)!.sessionPath;
 		syncSubagentWidget();
 		if (sessionAlive) {
 			try {
@@ -892,8 +1116,9 @@ export default function (pi: ExtensionAPI) {
 
 		const toolConfig = loadSubagentToolConfig();
 		acquireBackgroundSlot(toolConfig.maxConcurrentSubagents)
-			.then(() =>
-				runSingleAgent(
+			.then(() => {
+				emitSubagentEvent("started", { id: taskId, agent: agentName, mode: "background", task: taskText });
+				return runSingleAgent(
 					defaultCwd,
 					dispatchDefaults,
 					agents,
@@ -904,8 +1129,9 @@ export default function (pi: ExtensionAPI) {
 					controller.signal,
 					undefined,
 					makeDetails("single"),
-				),
-			)
+					sessionPath,
+				);
+			})
 			.then((result) => {
 				releaseBackgroundSlot();
 				const task = backgroundTasks.get(taskId);
@@ -946,6 +1172,16 @@ export default function (pi: ExtensionAPI) {
 					run.status = "failed";
 					run.endedAt = Date.now();
 					run.errorMessage = message;
+					emitSubagentEvent("failed", {
+						id: run.id,
+						agent: run.agent,
+						mode: run.mode,
+						task: run.task,
+						status: run.status,
+						usage: run.usage,
+						durationMs: run.endedAt - run.startedAt,
+						errorMessage: run.errorMessage,
+					});
 				}
 				syncSubagentWidget();
 				if (!sessionAlive) return;
@@ -1147,7 +1383,8 @@ export default function (pi: ExtensionAPI) {
 					const unread = bg && bg.status !== "running" && !bg.reviewed ? theme.fg("accent", " • new") : "";
 					const isActive = idx === selectedIndex;
 					const agentName = isActive ? theme.fg("accent", run.agent) : run.agent;
-					const label = `${agentName} ${theme.fg("muted", `[${run.mode}]`)} ${theme.fg("dim", `[${elapsed}]`)}${unread}`;
+					const resumable = run.status !== "running" ? theme.fg("muted", " [resumable]") : "";
+					const label = `${agentName} ${theme.fg("muted", `[${run.mode}]`)} ${theme.fg("dim", `[${elapsed}]`)}${unread}${resumable}`;
 					const prefix = focus === "list" && isActive ? theme.fg("accent", "> ") : "  ";
 					lines.push(truncateToWidth(`${prefix}${icon} ${label}`, colWidth, "...", true));
 				}
@@ -1164,7 +1401,9 @@ export default function (pi: ExtensionAPI) {
 					`${theme.fg("accent", theme.bold(run.agent))} ${theme.fg("muted", `(${run.agentSource}, ${run.mode})`)} — ` +
 					(run.status === "running" ? theme.fg("warning", "running") : run.status === "failed" ? theme.fg("error", "failed") : theme.fg("success", "done"));
 				body.push(...wrapTextWithAnsi(header, colWidth));
+				body.push(...wrapTextWithAnsi(theme.fg("dim", `id: ${run.id}${run.status !== "running" ? " (resumable via resume param)" : ""}`), colWidth));
 				if (run.model) body.push(...wrapTextWithAnsi(theme.fg("dim", `model: ${run.model}`), colWidth));
+				if (run.skills) body.push(...wrapTextWithAnsi(theme.fg("dim", `skills: ${run.skills}`), colWidth));
 				const usage = formatUsageStats(run.usage, undefined);
 				if (usage) body.push(...wrapTextWithAnsi(theme.fg("dim", `usage: ${usage}`), colWidth));
 				body.push(...wrapTextWithAnsi(theme.fg("muted", "task: ") + theme.fg("text", run.task), colWidth));
@@ -1326,9 +1565,25 @@ export default function (pi: ExtensionAPI) {
 			const agents = discovery.agents;
 			const confirmProjectAgents = params.confirmProjectAgents ?? true;
 
+			const makeErrorResult = (text: string) => ({
+				content: [{ type: "text" as const, text }],
+				details: { mode: "single" as const, agentScope, projectAgentsDir: discovery.projectAgentsDir, results: [] },
+				isError: true,
+			});
+			let resumeRun: RunRecord | undefined;
+			if (params.resume) {
+				resumeRun = allRuns.get(params.resume);
+				if (!resumeRun) return makeErrorResult(`Unknown run id to resume: "${params.resume}".`);
+				if (resumeRun.status === "running") return makeErrorResult(`Run "${params.resume}" is still running -- steer it instead of resuming.`);
+				if (params.agent && params.agent !== resumeRun.agent) {
+					return makeErrorResult(`Run "${params.resume}" was dispatched to "${resumeRun.agent}"; omit "agent" or match it when resuming.`);
+				}
+			}
+			const singleAgentName = resumeRun?.agent ?? params.agent;
+
 			const hasChain = (params.chain?.length ?? 0) > 0;
 			const hasTasks = (params.tasks?.length ?? 0) > 0;
-			const hasSingle = Boolean(params.agent && params.task);
+			const hasSingle = Boolean(singleAgentName && params.task);
 			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
 
 			const makeDetails =
@@ -1362,7 +1617,7 @@ export default function (pi: ExtensionAPI) {
 				const requestedAgentNames = new Set<string>();
 				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
 				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
-				if (params.agent) requestedAgentNames.add(params.agent);
+				if (singleAgentName) requestedAgentNames.add(singleAgentName);
 
 				const projectAgentsRequested = Array.from(requestedAgentNames)
 					.map((name) => agents.find((a) => a.name === name))
@@ -1391,6 +1646,7 @@ export default function (pi: ExtensionAPI) {
 					const step = params.chain[i];
 					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
 					const runId = trackRun("chain", step.agent, taskWithContext);
+					const sessionPath = allRuns.get(runId)!.sessionPath;
 
 					// Create update callback that includes all previous results
 					const chainUpdate: OnUpdateCallback = (partial) => {
@@ -1417,6 +1673,7 @@ export default function (pi: ExtensionAPI) {
 						signal,
 						chainUpdate,
 						makeDetails("chain"),
+						sessionPath,
 					);
 					finalizeRun(runId, result);
 					results.push(result);
@@ -1482,6 +1739,7 @@ export default function (pi: ExtensionAPI) {
 
 				const results = await mapWithConcurrencyLimit(params.tasks, toolConfig.maxConcurrentSubagents, async (t, index) => {
 					const runId = trackRun("parallel", t.agent, t.task);
+					const sessionPath = allRuns.get(runId)!.sessionPath;
 					const result = await runSingleAgent(
 						ctx.cwd,
 						dispatchDefaults,
@@ -1500,6 +1758,7 @@ export default function (pi: ExtensionAPI) {
 							}
 						},
 						makeDetails("parallel"),
+						sessionPath,
 					);
 					finalizeRun(runId, result);
 					allResults[index] = result;
@@ -1526,12 +1785,15 @@ export default function (pi: ExtensionAPI) {
 				};
 			}
 
-			if (params.agent && params.task && params.async) {
-				return dispatchBackgroundAgent(ctx.cwd, dispatchDefaults, agents, params.agent, params.task, params.cwd, makeDetails);
+			if (singleAgentName && params.task && params.async) {
+				return dispatchBackgroundAgent(
+					ctx.cwd, dispatchDefaults, agents, singleAgentName, params.task, params.cwd, makeDetails, resumeRun?.sessionPath,
+				);
 			}
 
-			if (params.agent && params.task) {
-				const runId = trackRun("single", params.agent, params.task);
+			if (singleAgentName && params.task) {
+				const runId = trackRun("single", singleAgentName, params.task, undefined, resumeRun?.sessionPath);
+				const sessionPath = allRuns.get(runId)!.sessionPath;
 				const trackedOnUpdate: OnUpdateCallback = (partial) => {
 					const r = partial.details?.results[0];
 					if (r) updateRunFromResult(runId, r);
@@ -1541,13 +1803,14 @@ export default function (pi: ExtensionAPI) {
 					ctx.cwd,
 					dispatchDefaults,
 					agents,
-					params.agent,
+					singleAgentName,
 					params.task,
 					params.cwd,
 					undefined,
 					signal,
 					trackedOnUpdate,
 					makeDetails("single"),
+					sessionPath,
 				);
 				finalizeRun(runId, result);
 				const isError = isFailedResult(result);
@@ -1606,12 +1869,13 @@ export default function (pi: ExtensionAPI) {
 				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
 				return new Text(text, 0, 0);
 			}
-			const agentName = args.agent || "...";
+			const agentName = args.agent || (args.resume ? "resume" : "...");
 			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "...";
 			let text =
 				theme.fg("toolTitle", theme.bold("subagent ")) +
 				theme.fg("accent", agentName) +
-				theme.fg("muted", ` [${scope}]`);
+				theme.fg("muted", ` [${scope}]`) +
+				(args.resume ? theme.fg("muted", ` ↻${args.resume}`) : "");
 			text += `\n  ${theme.fg("dim", preview)}`;
 			return new Text(text, 0, 0);
 		},

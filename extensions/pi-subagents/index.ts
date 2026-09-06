@@ -694,6 +694,13 @@ interface RunRecord {
 const MAX_TRACKED_RUNS = 50;
 const RUN_WIDGET_VISIBLE_COUNT = 6;
 
+/** Just the fields needed to render one row in the widget or the post-batch summary message. */
+type RunRowData = Pick<RunRecord, "agent" | "status" | "task" | "startedAt" | "endedAt">;
+
+interface SubagentSummaryDetails {
+	runs: RunRowData[];
+}
+
 // Same pastel palette/animation as pi-todo-list's widget, so the two panels match.
 const PASTEL_RAINBOW = [
 	"\x1b[38;2;255;179;186m",
@@ -774,6 +781,9 @@ export default function (pi: ExtensionAPI) {
 	const allRuns = new Map<string, RunRecord>();
 	// Set while the fleet inspector (/subagents) is open, so run-state changes live-refresh it too.
 	let fleetInspectorRefresh: (() => void) | undefined;
+	// Timestamp of the last post-batch summary message; only runs that finished after this get
+	// included in the next one, so a repeated all-idle state doesn't re-announce old runs.
+	let lastAnnouncedAt = 0;
 	const emptyUsage = (): UsageStats => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 });
 
 	/**
@@ -834,10 +844,14 @@ export default function (pi: ExtensionAPI) {
 	function writeRunManifest(run: RunRecord): void {
 		try {
 			const manifestPath = run.sessionPath.replace(/\.jsonl$/, ".meta.json");
+			// The manifest's `id` must match the session file's own basename, not `run.id` -- a resumed run
+			// keeps the original session file (and its filename) but gets a brand-new `run.id`. Rehydration
+			// reconstructs the session path from this `id`, so it has to reflect the file, not the latest run.
+			const sessionFileId = path.basename(run.sessionPath, ".jsonl");
 			fs.writeFileSync(
 				manifestPath,
 				JSON.stringify({
-					id: run.id,
+					id: sessionFileId,
 					agent: run.agent,
 					agentSource: run.agentSource,
 					task: run.task,
@@ -899,6 +913,10 @@ export default function (pi: ExtensionAPI) {
 				sessionPath,
 			});
 		}
+		// Rehydrated runs are history, not part of this fresh process's live batch -- without this, they'd
+		// leak into the widget alongside the next freshly spawned run (its `endedAt > lastAnnouncedAt` filter
+		// would otherwise still match them, since `lastAnnouncedAt` starts at 0 for a new process).
+		if (manifests.length > 0) lastAnnouncedAt = Date.now();
 		syncSubagentWidget();
 	}
 
@@ -921,6 +939,7 @@ export default function (pi: ExtensionAPI) {
 			errorMessage: run.errorMessage,
 		});
 		syncSubagentWidget();
+		maybeAnnounceBatchCompletion();
 	}
 
 	// Lightweight semaphore so background dispatches queue behind the same
@@ -982,10 +1001,51 @@ export default function (pi: ExtensionAPI) {
 		return PULSE_INDICATOR.frames[frame % PULSE_INDICATOR.frames.length]!;
 	}
 
+	/** Single line of run info, shared by the live widget and the static post-batch summary message so they match exactly. */
+	function renderRunRow(run: RunRowData, theme: any, frame: number): string {
+		const icon = runStatusIcon(run.status, frame);
+		const elapsed = formatElapsedShort((run.endedAt ?? Date.now()) - run.startedAt);
+		const preview = run.task.length > 40 ? `${run.task.slice(0, 40)}...` : run.task;
+		const name = run.status === "done" ? theme.fg("dim", run.agent) : theme.fg("text", run.agent);
+		return `  ${icon} ${name} ${theme.fg("dim", preview)} ${theme.fg("dim", `[${elapsed}]`)}`;
+	}
+
+	/**
+	 * Called after every `finalizeRun`. Once no tracked run is still `running`, the widget has just been
+	 * hidden by `syncSubagentWidget` -- this replaces it with a one-time visual snapshot reusing the exact
+	 * same row format, covering every run that finished since the last announcement (so a batch of parallel/
+	 * chain/background dispatches that all settle together gets a single summary, not one per run).
+	 *
+	 * Uses `appendEntry` (a display-only session entry), not `sendMessage` -- this is purely for the human to
+	 * see; it must not enter the LLM's context or steer/interrupt an in-progress turn.
+	 */
+	function maybeAnnounceBatchCompletion(): void {
+		if (!sessionAlive) return;
+		const runs = Array.from(allRuns.values());
+		if (runs.some((r) => r.status === "running")) return;
+		const newlyFinished = runs.filter((r) => (r.endedAt ?? 0) > lastAnnouncedAt);
+		if (newlyFinished.length === 0) return;
+		lastAnnouncedAt = Date.now();
+
+		const snapshot: RunRowData[] = newlyFinished.map((r) => ({
+			agent: r.agent,
+			status: r.status,
+			task: r.task,
+			startedAt: r.startedAt,
+			endedAt: r.endedAt,
+		}));
+		try {
+			pi.appendEntry<SubagentSummaryDetails>("pi-subagents-summary", { runs: snapshot });
+		} catch {
+			/* session may have torn down between the check and the call */
+		}
+	}
+
 	// Persistent above-editor widget mirroring pi-todo-list's look: a small
-	// header plus one line per run, pulsing while running. Shows both past and
-	// present runs from this process (foreground and background); the full
-	// history with context preview lives behind /subagents.
+	// header plus one line per run, pulsing while running. Scoped to the current,
+	// not-yet-announced batch only (see `maybeAnnounceBatchCompletion`) -- once a
+	// run has been folded into a summary entry, it drops out of the live widget's
+	// list even though it stays visible forever in /show-subagents's full history.
 	let widgetTui: TUI | undefined;
 	let widgetInvalidate: (() => void) | undefined;
 
@@ -1021,7 +1081,9 @@ export default function (pi: ExtensionAPI) {
 
 		return {
 			render(width: number): string[] {
-				const runs = Array.from(allRuns.values());
+				const runs = Array.from(allRuns.values()).filter(
+					(r) => r.status === "running" || (r.endedAt ?? 0) > lastAnnouncedAt,
+				);
 				if (runs.some((r) => r.status === "running")) startAnimation();
 				else stopAnimation();
 
@@ -1041,16 +1103,7 @@ export default function (pi: ExtensionAPI) {
 				});
 				const visible = sorted.slice(0, RUN_WIDGET_VISIBLE_COUNT);
 				for (const run of visible) {
-					const icon = runStatusIcon(run.status, frame);
-					const elapsed = formatElapsedShort((run.endedAt ?? Date.now()) - run.startedAt);
-					const preview = run.task.length > 40 ? `${run.task.slice(0, 40)}...` : run.task;
-					const name = run.status === "done" ? theme.fg("dim", run.agent) : theme.fg("text", run.agent);
-					lines.push(
-						truncateToWidth(
-							`  ${icon} ${name} ${theme.fg("dim", preview)} ${theme.fg("dim", `[${elapsed}]`)}`,
-							width,
-						),
-					);
+					lines.push(truncateToWidth(renderRunRow(run, theme, frame), width));
 				}
 				if (sorted.length > visible.length) {
 					lines.push(truncateToWidth(`  ${theme.fg("muted", `... ${sorted.length - visible.length} more`)}`, width));
@@ -1071,11 +1124,18 @@ export default function (pi: ExtensionAPI) {
 		};
 	}
 
-	/** Show/hide/refresh the persistent above-editor widget (and the fleet inspector, if open) to reflect current run state. */
+	/**
+	 * Show/hide/refresh the persistent above-editor widget (and the fleet inspector, if open) to reflect
+	 * current run state. The widget only shows while at least one run is still `running` -- once every
+	 * tracked run has settled (done or failed), it's hidden rather than lingering with stale finished
+	 * entries; `maybeAnnounceBatchCompletion` (called separately from `finalizeRun`) is what replaces it
+	 * with a one-time chat message summarizing the batch that just finished.
+	 */
 	function syncSubagentWidget() {
 		fleetInspectorRefresh?.();
 		if (!sessionAlive || !sessionCtx?.hasUI) return;
-		if (allRuns.size === 0) {
+		const anyRunning = Array.from(allRuns.values()).some((r) => r.status === "running");
+		if (!anyRunning) {
 			if (widgetTui) sessionCtx.ui.setWidget("pi-subagents", undefined);
 			return;
 		}
@@ -1525,6 +1585,18 @@ export default function (pi: ExtensionAPI) {
 			},
 		});
 	}
+
+	// Static, non-animated snapshot of the widget's rows, shown once as a chat message right after
+	// the widget itself gets hidden (see `maybeAnnounceBatchCompletion`) so the batch's final state
+	// doesn't just vanish.
+	pi.registerEntryRenderer<SubagentSummaryDetails>("pi-subagents-summary", (entry, _options, theme) => {
+		const runs = entry.data?.runs;
+		if (!runs || runs.length === 0) return undefined;
+		const failedCount = runs.filter((r) => r.status === "failed").length;
+		const header = `${theme.fg("accent", "Subagents")} ${theme.fg("muted", `${runs.length} completed${failedCount > 0 ? `, ${failedCount} failed` : ""}`)}`;
+		const lines = [header, ...runs.map((r) => renderRunRow(r, theme, 0))];
+		return new Text(lines.join("\n"), 1, 0);
+	});
 
 	pi.registerCommand("show-subagents", {
 		description: "Browse all subagents (past and present) and preview their context",

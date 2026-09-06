@@ -10,7 +10,7 @@ Delegate tasks to specialized subagents with isolated context windows.
 - **Markdown rendering**: Final output rendered with proper formatting (expanded view)
 - **Usage tracking**: Shows turns, tokens, cost, and context usage per agent
 - **Abort support**: Ctrl+C propagates to kill subagent processes
-- **Live fleet widget**: A persistent panel above the editor (styled like the todo-list widget) shows every subagent run this process — running and finished, foreground and background
+- **Live fleet widget**: A persistent panel above the editor (styled like the todo-list widget) shows every subagent run this process — running and finished, foreground and background. Once every tracked run has settled (none left `running`), the widget disappears and a static snapshot of its final state is left behind in the chat transcript, in the same row format — purely visual (a display-only session entry, not sent to the LLM and not able to steer an in-progress turn)
 - **Fleet browser**: `/show-subagents` opens a popup with every run (past and present) and lets you preview a run's full context (task, tool calls, transcript, usage)
 - **Model fallback**: If an agent's configured model isn't one you're actually authenticated for, the subagent automatically retries once using the main session's own model instead of failing outright
 - **Session resume**: Every run is persisted to its own session file; pass `resume: "<run id>"` (from the fleet inspector's `[resumable]` tag) with a new `task` to continue a finished run's conversation with full prior context, instead of starting fresh — see [Session Resume](#session-resume)

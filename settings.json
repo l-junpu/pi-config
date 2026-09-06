@@ -10,6 +10,9 @@
   "defaultThinkingLevel": "low",
   "hideThinkingBlock": true,
   "piOmpTheme": {
+    "theme": {
+      "autoApply": "off"
+    },
     "statusLine": {
       "layout": {
         "left": [
@@ -32,7 +35,7 @@
       ]
     }
   },
-  "theme": "titanium",
+  "theme": "matrix",
   "compaction": {
     "enabled": false
   },

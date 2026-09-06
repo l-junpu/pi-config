@@ -1909,10 +1909,10 @@ function formatBatchHeader(theme, batch, status) {
   if (status.allDone) {
     const glyph = getToolsRenderConfig().batchOpenGlyph;
     const elapsed = status.elapsedMs === void 0 ? "" : formatElapsed(theme, status.elapsedMs);
-    return `${theme.fg("text", bold(theme, `${glyph} ${label}`))}${elapsed}`;
+    return `${bold(theme, colorFromExtra(theme, "bashPromptColor", "bashMode", `${glyph} ${label}`))}${elapsed}`;
   }
   if (status.done > 0)
-    return `${theme.fg("text", bold(theme, `\u25CC ${label}`))}${theme.fg("dim", ` \xB7 ${status.done}/${status.total}`)}`;
+    return `${bold(theme, colorFromExtra(theme, "bashPromptColor", "bashMode", `\u25CC ${label}`))}${theme.fg("dim", ` \xB7 ${status.done}/${status.total}`)}`;
   return bold(theme, formatToolTitlePrefix(theme, label));
 }
 function memberGlyph(theme, member, show) {
@@ -1964,8 +1964,8 @@ function formatLoneOutputHeader(theme, meta, member) {
   const patternPart = meta.toolName === "find" && member.pattern ? `${theme.fg("text", member.pattern)} ` : "";
   const pathPart = member.pathLabel ? theme.fg("dim", ` \xB7 in ${member.pathLabel}`) : "";
   const unicodeIcon = meta.toolName === "ls" ? "\u25A4" : SEARCH_ICON_UNICODE;
-  const icon = `${getToolsRenderConfig().nerdFonts ? SEARCH_ICON : unicodeIcon} `;
-  return `${icon}${bold(theme, `${label}:`)} ${patternPart}${filesPart}${pathPart}`;
+  const icon = colorFromExtra(theme, "bashPromptColor", "bashMode", `${getToolsRenderConfig().nerdFonts ? SEARCH_ICON : unicodeIcon} `);
+  return `${icon}${bold(theme, colorFromExtra(theme, "bashPromptColor", "bashMode", `${label}:`))} ${patternPart}${filesPart}${pathPart}`;
 }
 function renderMemberSubtree(theme, member, isLastMember, width) {
   const safeWidth = Math.max(1, width);
@@ -3124,8 +3124,8 @@ import { highlightCode } from "@earendil-works/pi-coding-agent";
 var ESC2 = "\x1B";
 var BG_ANSI_PATTERN = new RegExp(`${ESC2}\\[(?:4\\d|10\\d|48;5;\\d{1,3}|48;2;\\d{1,3};\\d{1,3};\\d{1,3}|49)m`, "g");
 var CONTROL_CHARS = "\0-\b\v\f-\x7F";
-var ADD_ROW_BACKGROUND_MIX_RATIO = 0.24;
-var REMOVE_ROW_BACKGROUND_MIX_RATIO = 0.12;
+var ADD_ROW_BACKGROUND_MIX_RATIO = 0.32;
+var REMOVE_ROW_BACKGROUND_MIX_RATIO = 0.32;
 var ADD_INLINE_EMPHASIS_MIX_RATIO = 0.44;
 var REMOVE_INLINE_EMPHASIS_MIX_RATIO = 0.26;
 var CONTEXT_KEEP_DEFAULT = 2;
@@ -3599,7 +3599,7 @@ var UnifiedDiffRenderer = class {
     const contPrefixAnsi = `${this.ctx.fg("dim", " ")} ${this.ctx.fg("dim", " ".repeat(this.ctx.lineNumberWidth))}  `;
     const contPrefixPlain = ` ${" ".repeat(1 + this.ctx.lineNumberWidth)}  `;
     const rowBg = visualKind === "add" ? this.ctx.palette.addRowBgAnsi : visualKind === "remove" ? this.ctx.palette.removeRowBgAnsi : void 0;
-    const emphasisBg = visualKind === "add" ? this.ctx.palette.addEmphasisBgAnsi : visualKind === "remove" ? this.ctx.palette.removeEmphasisBgAnsi : void 0;
+    const emphasisBg = void 0;
     const spans = this.ctx.inlineSpans(line);
     const plainSegments = wrapPlainText(line.line, codeWidth);
     const out = [];
@@ -3718,7 +3718,7 @@ var SplitDiffRenderer = class {
     const contPrefixPlain = `${markerChar} ${" ".repeat(this.ctx.lineNumberWidth)} \u2502 `;
     const codeWidth = Math.max(1, columnWidth - safeVisibleWidth(firstPrefixPlain));
     const rowBg = this.getRowBackground(lineKind);
-    const emphasisBg = this.getEmphasisBackground(lineKind);
+    const emphasisBg = void 0;
     const plainSegments = wrapPlainText(line.line, codeWidth);
     const lines = [];
     const spans = this.ctx.inlineSpans(line);
@@ -7266,7 +7266,17 @@ var STATUS_FRAMES = ["\u28FE", "\u28FD", "\u28FB", "\u28BF", "\u287F", "\u28DF",
 var FRAME_INTERVAL_MS = 80;
 var ASCII_FRAMES = ["|", "/", "-", "\\"];
 var SHIMMER_INTERVAL_MS = Math.round(1e3 / 30);
-var WORKING_TEXT = "Working...";
+var KATAKANA_CHARS = "\u30A2\u30AB\u30B5\u30BF\u30CA\u30CF\u30DE\u30E4\u30E9\u30EF\u30A4\u30AD\u30B7\u30C1\u30CB\u30D2\u30DF\u30EA\u30F0\u30A6\u30AF\u30B9\u30C4\u30CC\u30D5\u30E0\u30E6\u30EB\u30F1\u30A8\u30B1\u30BB\u30C6\u30CD\u30D8\u30E1\u30EC\u30F2\u30A8\u30F3\u30A9\u30E3\u30E5\u30E7\u30C3\u30FC".split("");
+var KATAKANA_LENGTH = 16;
+var KATAKANA_TICK_MS = 90;
+function randomKatakanaChar() {
+  return KATAKANA_CHARS[Math.floor(Math.random() * KATAKANA_CHARS.length)];
+}
+function katakanaTextForTick(_tick) {
+  let out = "";
+  for (let i = 0; i < KATAKANA_LENGTH; i++) out += randomKatakanaChar();
+  return out;
+}
 function interruptHint() {
   try {
     const key = keyText("app.interrupt");
@@ -7302,11 +7312,20 @@ function buildRowRenderer(state) {
   const hint = interruptHint();
   const palette = state.palette();
   const hintPalette = { low: palette.low, mid: palette.low, high: palette.mid };
-  const segments = hint ? [
-    { text: WORKING_TEXT, palette },
-    { text: hint, palette: hintPalette }
-  ] : [{ text: WORKING_TEXT, palette }];
-  return createSegmentedShimmer(segments, state.mode);
+  let lastTick = -1;
+  let text = katakanaTextForTick(0);
+  return (time) => {
+    const tick = Math.floor(time / KATAKANA_TICK_MS);
+    if (tick !== lastTick) {
+      lastTick = tick;
+      text = katakanaTextForTick(tick);
+    }
+    const segments = hint ? [
+      { text, palette },
+      { text: hint, palette: hintPalette }
+    ] : [{ text, palette }];
+    return createSegmentedShimmer(segments, state.mode)(time);
+  };
 }
 var shimmer;
 function configureWorkingShimmer(ui, mode, palette) {

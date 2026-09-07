@@ -1,6 +1,10 @@
 // Pi Agent Cost Dashboard backend.
 // Run from this directory: `npm start`
 
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 import cors from "cors";
 import express from "express";
 
@@ -24,6 +28,15 @@ app.use(refreshRouter);
 app.use(configRouter);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
+
+// Serves the built React app (dashboard/frontend/dist) if present, so the whole
+// dashboard runs from this one process/port. Falls back to API-only if the
+// frontend hasn't been built yet (e.g. during backend-only development).
+const frontendDist = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "frontend", "dist");
+if (existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(frontendDist, "index.html")));
+}
 
 async function pollLoop(intervalSeconds) {
   for (;;) {

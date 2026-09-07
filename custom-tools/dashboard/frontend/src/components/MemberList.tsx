@@ -41,6 +41,18 @@ export default function MemberList({
           fullWidth
         />
       </div>
+      <button
+        className="btn"
+        onClick={() => onSelect(null)}
+        style={{
+          textAlign: "left",
+          border: "none",
+          background: selected === null ? "rgba(255,255,255,0.12)" : "transparent",
+          fontWeight: 600,
+        }}
+      >
+        Team Overview
+      </button>
       {members.map((m) => (
         <MemberRow
           key={m.name}

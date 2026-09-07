@@ -13,6 +13,7 @@ import MemberList from "./components/MemberList";
 import ModelBreakdownTable from "./components/ModelBreakdownTable";
 import RangeSelector from "./components/RangeSelector";
 import TeamSummaryStrip from "./components/TeamSummaryStrip";
+import { PopupProvider } from "./PopupContext";
 import type { DiscoveredHost, Member, Range, Report, Team } from "./types";
 
 export default function App() {
@@ -99,8 +100,22 @@ export default function App() {
   }
 
   return (
+    <PopupProvider>
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
-      <Toaster position="bottom-right" toastOptions={{ duration: 4000 }} />
+      <Toaster
+        position="bottom-right"
+        toastOptions={{
+          duration: 5000,
+          style: {
+            background: "rgba(15, 17, 26, 0.97)",
+            color: "var(--text)",
+            border: "1px solid var(--glass-border)",
+            borderRadius: 12,
+          },
+          success: { iconTheme: { primary: "#4ade80", secondary: "rgba(15, 17, 26, 0.97)" } },
+          error: { iconTheme: { primary: "#f87171", secondary: "rgba(15, 17, 26, 0.97)" } },
+        }}
+      />
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Pi Agent Cost Dashboard</h1>
@@ -185,5 +200,6 @@ export default function App() {
         </div>
       </div>
     </div>
+    </PopupProvider>
   );
 }

@@ -5,9 +5,10 @@ interface Props {
   onClose: () => void;
   children: ReactNode;
   width?: number;
+  dismissible?: boolean;
 }
 
-export default function Modal({ title, onClose, children, width = 320 }: Props) {
+export default function Modal({ title, onClose, children, width = 320, dismissible = true }: Props) {
   return (
     <div
       style={{
@@ -19,14 +20,16 @@ export default function Modal({ title, onClose, children, width = 320 }: Props) 
         justifyContent: "center",
         zIndex: 100,
       }}
-      onClick={onClose}
+      onClick={dismissible ? onClose : undefined}
     >
-      <div className="glass" style={{ padding: 24, width }} onClick={(e) => e.stopPropagation()}>
+      <div className="popup" style={{ padding: 24, width }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ margin: 0, fontSize: "1.1rem" }}>{title}</h3>
-          <button className="btn" style={{ border: "none", padding: "4px 8px" }} onClick={onClose}>
-            ✕
-          </button>
+          {dismissible && (
+            <button className="btn" style={{ border: "none", padding: "4px 8px" }} onClick={onClose}>
+              ✕
+            </button>
+          )}
         </div>
         {children}
       </div>

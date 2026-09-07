@@ -23066,6 +23066,17 @@ function setMemberState(name, team, status, report, error, polledAt) {
     lastPolled: previous ? previous.lastPolled : polledAt
   });
 }
+function setMemberStatus(name, team, status) {
+  const previous = state.get(name);
+  state.set(name, {
+    name,
+    team,
+    status,
+    report: previous ? previous.report : null,
+    error: previous ? previous.error : null,
+    lastPolled: previous ? previous.lastPolled : null
+  });
+}
 function getMemberState(name) {
   return state.get(name) ?? null;
 }
@@ -23078,6 +23089,7 @@ function getAllState() {
 
 // src/poller.js
 var TIMEOUT_MS = 5e3;
+var HEALTH_TIMEOUT_MS = 2e3;
 async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
@@ -23113,6 +23125,19 @@ async function pollMembers(entries) {
     entries.map(
       ({ team, member }) => pollMember(member.name, team, member.ip, member.port ?? 8765)
     )
+  );
+}
+async function checkHealth(name, team, ip, port2) {
+  try {
+    const res = await fetchWithTimeout(`http://${ip}:${port2}/health`, HEALTH_TIMEOUT_MS);
+    setMemberStatus(name, team, res.ok ? "online" : "offline");
+  } catch {
+    setMemberStatus(name, team, "offline");
+  }
+}
+async function checkHealthAll(entries) {
+  return Promise.all(
+    entries.map(({ team, member }) => checkHealth(member.name, team, member.ip, member.port ?? 8765))
   );
 }
 
@@ -23570,11 +23595,24 @@ async function pollLoop(intervalSeconds) {
     await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1e3));
   }
 }
+async function healthLoop(intervalSeconds) {
+  for (; ; ) {
+    try {
+      const hosts = loadHosts();
+      const entries = iterMembers(hosts);
+      if (entries.length > 0) await checkHealthAll(entries);
+    } catch (e) {
+      console.error("[healthLoop] error:", e);
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1e3));
+  }
+}
 var serverConfig = loadServer();
 var port = serverConfig.port ?? 7420;
 app.listen(port, "0.0.0.0", () => {
   console.log(`Pi Agent Cost Dashboard backend listening on port ${port}`);
   pollLoop(serverConfig.poll_interval_seconds ?? 300);
+  healthLoop(5);
 });
 /*! Bundled license information:
 

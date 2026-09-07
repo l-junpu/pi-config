@@ -52,10 +52,27 @@ async function pollLoop(intervalSeconds) {
   }
 }
 
+// Cheap /health-only heartbeat, independent of and much more frequent than the
+// full report poll above -- so a member shows online as soon as its agent is
+// reachable, without waiting for (or forcing) a full report pull.
+async function healthLoop(intervalSeconds) {
+  for (;;) {
+    try {
+      const hosts = config.loadHosts();
+      const entries = config.iterMembers(hosts);
+      if (entries.length > 0) await poller.checkHealthAll(entries);
+    } catch (e) {
+      console.error("[healthLoop] error:", e);
+    }
+    await new Promise((resolve) => setTimeout(resolve, intervalSeconds * 1000));
+  }
+}
+
 const serverConfig = config.loadServer();
 const port = serverConfig.port ?? 7420;
 
 app.listen(port, "0.0.0.0", () => {
   console.log(`Pi Agent Cost Dashboard backend listening on port ${port}`);
   pollLoop(serverConfig.poll_interval_seconds ?? 300);
+  healthLoop(5);
 });

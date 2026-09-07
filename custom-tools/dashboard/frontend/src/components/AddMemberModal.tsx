@@ -33,7 +33,7 @@ export default function AddMemberModal({ team, onClose, onAdded }: Props) {
   }
 
   return (
-    <Modal title={`Add Member to ${team}`} onClose={onClose}>
+    <Modal title={`Add Member to ${team}`} onClose={onClose} dismissible={false}>
       <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <input
           className="glass"
@@ -61,9 +61,14 @@ export default function AddMemberModal({ team, onClose, onAdded }: Props) {
           type="number"
         />
         {error && <span style={{ color: "var(--offline)", fontSize: "0.8rem" }}>{error}</span>}
-        <button className="btn btn-primary" type="submit" disabled={submitting}>
-          {submitting ? "Adding..." : "Add Member"}
-        </button>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="btn btn-primary" type="submit" disabled={submitting}>
+            {submitting ? "Adding..." : "Add"}
+          </button>
+        </div>
       </form>
     </Modal>
   );

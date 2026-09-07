@@ -1,6 +1,7 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import * as api from "../api";
+import { usePopup } from "../PopupContext";
 import type { DiscoveredHost } from "../types";
 
 interface Props {
@@ -8,28 +9,16 @@ interface Props {
 }
 
 export default function DiscoverButton({ onDiscovered }: Props) {
-  const [confirming, setConfirming] = useState(false);
+  const { isOpen: confirming, open: openConfirm, close: closeConfirm } = usePopup("discover");
   const [scanning, setScanning] = useState(false);
 
   async function handleConfirm() {
-    setConfirming(false);
+    closeConfirm();
     setScanning(true);
     try {
       const res = await api.discoverHosts();
       onDiscovered(res.hosts);
-      toast.custom(
-        (t) => (
-          <div className="glass" style={{ padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontSize: "0.85rem" }}>
-              Sweep complete -- found {res.found} host{res.found === 1 ? "" : "s"}, {res.hosts.length} known total.
-            </span>
-            <button className="btn" style={{ border: "none", padding: "2px 8px" }} onClick={() => toast.dismiss(t.id)}>
-              ✕
-            </button>
-          </div>
-        ),
-        { duration: Infinity }
-      );
+      toast.success(`Sweep complete -- found ${res.found} host${res.found === 1 ? "" : "s"}, ${res.hosts.length} known total.`);
     } catch (err) {
       toast.error((err as Error).message);
     } finally {
@@ -39,13 +28,13 @@ export default function DiscoverButton({ onDiscovered }: Props) {
 
   return (
     <div style={{ position: "relative" }}>
-      <button className="btn" disabled={scanning} onClick={() => setConfirming(true)}>
+      <button className="btn" disabled={scanning} onClick={openConfirm}>
         {scanning ? "Scanning..." : "Discover Hosts"}
       </button>
 
       {confirming && (
         <div
-          className="glass"
+          className="popup"
           style={{
             position: "absolute",
             top: "calc(100% + 8px)",
@@ -59,7 +48,7 @@ export default function DiscoverButton({ onDiscovered }: Props) {
             Scan the configured subnet for new hosts? This probes every IP in range.
           </p>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setConfirming(false)}>
+            <button className="btn" onClick={closeConfirm}>
               Cancel
             </button>
             <button className="btn btn-primary" onClick={handleConfirm}>

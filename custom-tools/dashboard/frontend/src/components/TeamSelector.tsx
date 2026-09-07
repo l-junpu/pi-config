@@ -14,7 +14,7 @@ export default function TeamSelector({ teams, selected, onSelect, fullWidth }: P
       value={selected}
       onChange={(e) => onSelect(e.target.value)}
       style={{
-        padding: "8px 16px",
+        padding: "8px 24px 8px 16px",
         fontSize: "0.85rem",
         color: "var(--text)",
         border: "1px solid var(--glass-border)",

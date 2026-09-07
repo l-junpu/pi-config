@@ -87,6 +87,20 @@ export function setMemberState(name, team, status, report, error, polledAt) {
   });
 }
 
+/** Lightweight status-only update from a /health heartbeat -- doesn't touch
+ * report/error/lastPolled, which only change on a full report poll. */
+export function setMemberStatus(name, team, status) {
+  const previous = state.get(name);
+  state.set(name, {
+    name,
+    team,
+    status,
+    report: previous ? previous.report : null,
+    error: previous ? previous.error : null,
+    lastPolled: previous ? previous.lastPolled : null,
+  });
+}
+
 export function getMemberState(name) {
   return state.get(name) ?? null;
 }

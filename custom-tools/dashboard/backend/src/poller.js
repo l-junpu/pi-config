@@ -4,6 +4,7 @@
 import * as store from "./store.js";
 
 const TIMEOUT_MS = 5000;
+const HEALTH_TIMEOUT_MS = 2000;
 
 async function fetchWithTimeout(url, timeoutMs) {
   const controller = new AbortController();
@@ -46,5 +47,22 @@ export async function pollMembers(entries) {
     entries.map(({ team, member }) =>
       pollMember(member.name, team, member.ip, member.port ?? 8765)
     )
+  );
+}
+
+/** Cheap online/offline heartbeat via /health only -- no report data fetched. */
+export async function checkHealth(name, team, ip, port) {
+  try {
+    const res = await fetchWithTimeout(`http://${ip}:${port}/health`, HEALTH_TIMEOUT_MS);
+    store.setMemberStatus(name, team, res.ok ? "online" : "offline");
+  } catch {
+    store.setMemberStatus(name, team, "offline");
+  }
+}
+
+/** entries: array of { team, member }. Heartbeats all of them concurrently. */
+export async function checkHealthAll(entries) {
+  return Promise.all(
+    entries.map(({ team, member }) => checkHealth(member.name, team, member.ip, member.port ?? 8765))
   );
 }

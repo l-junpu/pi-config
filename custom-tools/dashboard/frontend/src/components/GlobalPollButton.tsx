@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { usePopup } from "../PopupContext";
 
 interface Props {
   label: string;
@@ -6,11 +7,11 @@ interface Props {
 }
 
 export default function GlobalPollButton({ label, onConfirm }: Props) {
-  const [confirming, setConfirming] = useState(false);
+  const { isOpen: confirming, open: openConfirm, close: closeConfirm } = usePopup("poll");
   const [polling, setPolling] = useState(false);
 
   async function handleConfirm() {
-    setConfirming(false);
+    closeConfirm();
     setPolling(true);
     try {
       await onConfirm();
@@ -21,13 +22,13 @@ export default function GlobalPollButton({ label, onConfirm }: Props) {
 
   return (
     <div style={{ position: "relative" }}>
-      <button className="btn btn-primary" disabled={polling} onClick={() => setConfirming(true)}>
+      <button className="btn btn-primary" disabled={polling} onClick={openConfirm}>
         {polling ? "Polling..." : label}
       </button>
 
       {confirming && (
         <div
-          className="glass"
+          className="popup"
           style={{
             position: "absolute",
             top: "calc(100% + 8px)",
@@ -39,7 +40,7 @@ export default function GlobalPollButton({ label, onConfirm }: Props) {
         >
           <p style={{ margin: "0 0 12px", fontSize: "0.85rem" }}>Poll now? This contacts hosts over the LAN.</p>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button className="btn" onClick={() => setConfirming(false)}>
+            <button className="btn" onClick={closeConfirm}>
               Cancel
             </button>
             <button className="btn btn-primary" onClick={handleConfirm}>

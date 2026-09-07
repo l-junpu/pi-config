@@ -3,7 +3,6 @@
 
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import cors from "cors";
 import express from "express";
@@ -15,6 +14,7 @@ import teamsRouter from "./routes/teams.js";
 import reportsRouter from "./routes/reports.js";
 import refreshRouter from "./routes/refresh.js";
 import configRouter from "./routes/config.js";
+import discoverRouter from "./routes/discover.js";
 
 store.hydrateFromDisk(config.loadHosts());
 
@@ -26,13 +26,14 @@ app.use(teamsRouter);
 app.use(reportsRouter);
 app.use(refreshRouter);
 app.use(configRouter);
+app.use(discoverRouter);
 
 app.get("/api/health", (req, res) => res.json({ status: "ok" }));
 
 // Serves the built React app (dashboard/frontend/dist) if present, so the whole
 // dashboard runs from this one process/port. Falls back to API-only if the
 // frontend hasn't been built yet (e.g. during backend-only development).
-const frontendDist = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "..", "frontend", "dist");
+const frontendDist = path.join(config.dashboardDir(), "frontend", "dist");
 if (existsSync(frontendDist)) {
   app.use(express.static(frontendDist));
   app.get(/^(?!\/api).*/, (req, res) => res.sendFile(path.join(frontendDist, "index.html")));

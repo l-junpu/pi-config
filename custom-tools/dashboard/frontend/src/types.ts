@@ -71,3 +71,18 @@ export interface RefreshResponse {
   results: RefreshResult[];
   summary?: string;
 }
+
+export interface DiscoveredHost {
+  ip: string;
+  port: number;
+  name: string;
+  host: string | null;
+  username: string | null;
+  first_seen: string;
+  last_seen: string;
+}
+
+export interface DiscoverResponse {
+  hosts: DiscoveredHost[];
+  found: number;
+}

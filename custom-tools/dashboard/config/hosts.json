@@ -2,13 +2,7 @@
   "teams": [
     {
       "team": "team-alpha",
-      "members": [
-        {
-          "name": "Jun Pu",
-          "ip": "10.201.236.220",
-          "port": 8765
-        }
-      ]
+      "members": []
     }
   ]
 }

@@ -7,6 +7,12 @@ import path from "node:path";
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export function dashboardDir() {
+  // Inside a pkg-bundled exe, import.meta.url resolves to a virtual snapshot
+  // path, not the real exe location -- use process.execPath instead so
+  // config/ (kept external, not baked into the exe) resolves correctly.
+  if (process.pkg) {
+    return path.resolve(path.dirname(process.execPath), "..");
+  }
   return path.resolve(__dirname, "..", "..");
 }
 

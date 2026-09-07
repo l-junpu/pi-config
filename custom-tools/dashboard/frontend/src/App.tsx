@@ -1,16 +1,19 @@
 import { useEffect, useState } from "react";
+import toast, { Toaster } from "react-hot-toast";
 import * as api from "./api";
 import AddMemberModal from "./components/AddMemberModal";
 import AddTeamModal from "./components/AddTeamModal";
 import CostSummary from "./components/CostSummary";
 import CostTrendChart from "./components/CostTrendChart";
+import DiscoverButton from "./components/DiscoverButton";
+import DiscoveredHostsModal from "./components/DiscoveredHostsModal";
 import EditMemberModal from "./components/EditMemberModal";
 import GlobalPollButton from "./components/GlobalPollButton";
 import MemberList from "./components/MemberList";
 import ModelBreakdownTable from "./components/ModelBreakdownTable";
 import RangeSelector from "./components/RangeSelector";
 import TeamSummaryStrip from "./components/TeamSummaryStrip";
-import type { Member, Range, Report, Team } from "./types";
+import type { DiscoveredHost, Member, Range, Report, Team } from "./types";
 
 export default function App() {
   const [teams, setTeams] = useState<Team[]>([]);
@@ -22,6 +25,7 @@ export default function App() {
   const [showAddTeam, setShowAddTeam] = useState(false);
   const [showAddMember, setShowAddMember] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
+  const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[] | null>(null);
 
   async function loadTeams() {
     const data = await api.getTeams();
@@ -59,23 +63,44 @@ export default function App() {
 
   async function handleDeleteMember(member: Member) {
     if (!confirm(`Remove ${member.name} from ${selectedTeam}?`)) return;
-    await api.deleteMember(selectedTeam, member.name);
-    if (selectedMember === member.name) setSelectedMember(null);
-    await loadTeams();
+    try {
+      await api.deleteMember(selectedTeam, member.name);
+      if (selectedMember === member.name) setSelectedMember(null);
+      await loadTeams();
+      toast.success(`Removed ${member.name}`);
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
   }
 
   async function handleRefresh() {
-    if (selectedMember) {
-      await api.refreshMember(selectedMember);
-    } else if (selectedTeam) {
-      await api.refreshTeam(selectedTeam);
+    try {
+      let response;
+      if (selectedMember) {
+        response = await api.refreshMember(selectedMember);
+      } else if (selectedTeam) {
+        response = await api.refreshTeam(selectedTeam);
+      }
+      await loadTeams();
+      await loadReport();
+
+      if (response) {
+        if (selectedMember) {
+          const result = response.results[0];
+          if (result?.status === "online") toast.success(`${selectedMember} updated`);
+          else toast.error(`${selectedMember} is offline`);
+        } else {
+          toast.success(response.summary ?? "Poll complete");
+        }
+      }
+    } catch (err) {
+      toast.error((err as Error).message);
     }
-    await loadTeams();
-    await loadReport();
   }
 
   return (
     <div style={{ maxWidth: 1100, margin: "0 auto", padding: "32px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+      <Toaster position="bottom-right" toastOptions={{ duration: 4000 }} />
       <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h1 style={{ margin: 0, fontSize: "1.5rem" }}>Pi Agent Cost Dashboard</h1>
@@ -85,6 +110,7 @@ export default function App() {
           <button className="btn" onClick={() => setShowAddTeam(true)}>
             + New Team
           </button>
+          <DiscoverButton onDiscovered={setDiscoveredHosts} />
           <GlobalPollButton label={selectedMember ? `Poll ${selectedMember}` : "Poll Team"} onConfirm={handleRefresh} />
         </div>
       </header>
@@ -110,6 +136,18 @@ export default function App() {
           member={editingMember}
           onClose={() => setEditingMember(null)}
           onSaved={loadTeams}
+        />
+      )}
+
+      {discoveredHosts && (
+        <DiscoveredHostsModal
+          hosts={discoveredHosts}
+          teams={teams}
+          onClose={() => setDiscoveredHosts(null)}
+          onRenamed={(host) =>
+            setDiscoveredHosts((prev) => prev?.map((h) => (h.ip === host.ip ? host : h)) ?? null)
+          }
+          onMemberAdded={loadTeams}
         />
       )}
 

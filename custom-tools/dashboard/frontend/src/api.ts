@@ -1,4 +1,6 @@
 import type {
+  DiscoveredHost,
+  DiscoverResponse,
   MemberReportResponse,
   RefreshResponse,
   Report,
@@ -78,6 +80,27 @@ export async function deleteMember(team: string, name: string): Promise<void> {
     const data = await res.json().catch(() => ({}));
     throw new Error(data.detail ?? `DELETE member -> ${res.status}`);
   }
+}
+
+export function getDiscovered(): Promise<{ hosts: DiscoveredHost[] }> {
+  return getJson("/api/discovered");
+}
+
+export function discoverHosts(): Promise<DiscoverResponse> {
+  return postJson("/api/discover");
+}
+
+export async function renameDiscovered(ip: string, name: string): Promise<DiscoveredHost> {
+  const res = await fetch(`/api/discovered/${encodeURIComponent(ip)}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `PATCH discovered -> ${res.status}`);
+  }
+  return res.json();
 }
 
 export type { Report };

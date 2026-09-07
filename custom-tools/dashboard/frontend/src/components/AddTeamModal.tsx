@@ -1,4 +1,5 @@
 import { useState } from "react";
+import toast from "react-hot-toast";
 import * as api from "../api";
 import Modal from "./Modal";
 
@@ -20,6 +21,7 @@ export default function AddTeamModal({ onClose, onAdded }: Props) {
       await api.addTeam(team.trim());
       onAdded(team.trim());
       onClose();
+      toast.success(`Created team ${team.trim()}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {

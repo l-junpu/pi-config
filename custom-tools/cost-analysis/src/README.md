@@ -7,12 +7,18 @@ Run from this directory (`cost-analysis/src`). Requires `pyinstaller` installed
 cd "C:\Users\Jun Pu\.pi\agent\custom-tools\cost-analysis\src"
 
 pyinstaller --onefile --distpath ../bin --workpath ../build --specpath ../build --noconsole analyze.py
-pyinstaller --onefile --distpath ../bin --workpath ../build --specpath ../build --noconsole agent.py
+pyinstaller --onefile --distpath ../bin --workpath ../build --specpath ../build --noconsole --name pi-analysis-agent agent.py
 pyinstaller --onefile --distpath ../bin --workpath ../build --specpath ../build install_task.py
 pyinstaller --onefile --distpath ../bin --workpath ../build --specpath ../build pull_report.py
 
 rm -rf ../build
 ```
+
+Or just double-click `build.bat` in this directory -- it runs the same commands,
+including the `pi-analysis-agent` rename for `agent.py`.
+
+In `bin/`, `setup.bat` registers the scheduled task and starts the agent immediately
+(no logoff/logon required) -- run it after rebuilding to pick up changes.
 
 Notes:
 - `agent.py` needs `--noconsole` (runs as a background service). `analyze.py` also
@@ -32,10 +38,18 @@ Notes:
 
 1. Copy the whole `cost-analysis` folder to
    `C:\Users\<username>\.pi\agent\tools\cost-analysis\` on their PC.
-2. Run `bin\install_task.exe` once. This registers `agent.exe` to auto-start on
-   Windows logon via Task Scheduler (safe to re-run -- it overwrites the existing task
-   in place instead of creating duplicates).
-3. The service starts automatically on their **next** logon. If they don't want to
+2. Run `bin\setup.bat` once (right-click -> Run as administrator, or let it
+   self-elevate via the UAC prompt). This registers `pi-analysis-agent.exe` to
+   auto-start on Windows logon via Task Scheduler *and* starts it immediately
+   (no logoff/logon needed), then verifies the process is running.
+
+Equivalent manual steps, if you'd rather not run `setup.bat`:
+
+1. Run `bin\install_task.exe` once. This registers `pi-analysis-agent.exe` to
+   auto-start on Windows logon via Task Scheduler (safe to re-run -- it
+   overwrites the existing task in place instead of creating duplicates). It
+   listens on port `8765` by default (`DEFAULT_PORT` in `agent.py`).
+2. The service starts automatically on their **next** logon. If they don't want to
    log out and back in, start it immediately with:
 
    ```bash

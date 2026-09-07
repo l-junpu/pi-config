@@ -29,7 +29,7 @@ def resolve_agent_command() -> str:
     if install_task.exe was itself placed in bin/); fall back to `python agent.py` in
     the sibling src/ folder for local/dev testing where only the .py files exist."""
     here = script_dir()
-    candidates = [here / "agent.exe", here.parent / "bin" / "agent.exe"]
+    candidates = [here / "pi-analysis-agent.exe", here.parent / "bin" / "pi-analysis-agent.exe"]
     for agent_exe in candidates:
         if agent_exe.exists():
             return f'"{agent_exe}"'

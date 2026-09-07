@@ -1,4 +1,5 @@
 import { useState } from "react";
+import toast from "react-hot-toast";
 import * as api from "../api";
 import type { Member } from "../types";
 import Modal from "./Modal";
@@ -24,6 +25,7 @@ export default function EditMemberModal({ team, member, onClose, onSaved }: Prop
       await api.editMember(team, member.name, ip.trim(), Number(port));
       onSaved();
       onClose();
+      toast.success(`Saved ${member.name}`);
     } catch (err) {
       setError((err as Error).message);
     } finally {

@@ -1,0 +1,5 @@
+{
+  "port": 7420,
+  "poll_interval_seconds": 300,
+  "default_team": "team-alpha"
+}

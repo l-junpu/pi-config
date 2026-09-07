@@ -1,0 +1,149 @@
+{
+  "polled_at": "2026-09-07T09:36:43.849Z",
+  "report": {
+    "totals": {
+      "cost": 8.132570900000001,
+      "input_tokens": 20691,
+      "output_tokens": 179529,
+      "cache_read_tokens": 23828392,
+      "cache_write_tokens": 629465,
+      "priced_native_turns": 6,
+      "priced_as_default_turns": 314,
+      "code_lines": 4509,
+      "summary_lines": 1245,
+      "sessions_scanned": 5
+    },
+    "date_range": {
+      "earliest": "2026-09-07",
+      "latest": "2026-09-07"
+    },
+    "by_model": {
+      "anthropic/claude-haiku-4-5": {
+        "cost": 0,
+        "input": 0,
+        "output": 0,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "turns": 1
+      },
+      "nvidia/meta/muse-glimmer-30b": {
+        "cost": 0,
+        "input": 13470,
+        "output": 1439,
+        "cacheRead": 10560,
+        "cacheWrite": 0,
+        "turns": 5
+      },
+      "claude-bridge/claude-sonnet-5": {
+        "cost": 8.0867009,
+        "input": 626,
+        "output": 174822,
+        "cacheRead": 23817832,
+        "cacheWrite": 629465,
+        "turns": 313
+      },
+      "local-llama/carstenuhlig/omnicoder-9b:q4_K_M": {
+        "cost": 0.04587,
+        "input": 6595,
+        "output": 3268,
+        "cacheRead": 0,
+        "cacheWrite": 0,
+        "turns": 1
+      }
+    },
+    "by_day": {
+      "2026-09-07": {
+        "cost": 8.132570900000001,
+        "code_lines": 4509,
+        "summary_lines": 1245
+      }
+    },
+    "by_week": {
+      "2026-W37": 8.132570900000001
+    },
+    "by_month": {
+      "2026-09": 8.132570900000001
+    },
+    "by_project": {
+      "--C--Users-Jun Pu-.pi-agent--": {
+        "cost": 3.0811158000000005,
+        "code_lines": 1357,
+        "summary_lines": 906,
+        "sessions": [
+          {
+            "session": "run_1788743133759_eho9wt.jsonl",
+            "type": "subagent",
+            "cost": 0,
+            "input_tokens": 5317,
+            "output_tokens": 660,
+            "cache_read_tokens": 2752,
+            "cache_write_tokens": 0,
+            "models": [
+              "anthropic/claude-haiku-4-5",
+              "nvidia/meta/muse-glimmer-30b"
+            ]
+          },
+          {
+            "session": "2026-09-07T01-03-55-923Z_01a07964-ac13-7d41-a791-f1c9439c41c2.jsonl",
+            "type": "main",
+            "cost": 0,
+            "input_tokens": 8153,
+            "output_tokens": 779,
+            "cache_read_tokens": 7808,
+            "cache_write_tokens": 0,
+            "models": [
+              "nvidia/meta/muse-glimmer-30b"
+            ]
+          },
+          {
+            "session": "2026-09-07T06-01-32-702Z_01a07a75-251e-7471-be9a-dcb1d13fbe21.jsonl",
+            "type": "main",
+            "cost": 3.0352458000000007,
+            "input_tokens": 258,
+            "output_tokens": 70360,
+            "cache_read_tokens": 8303399,
+            "cache_write_tokens": 268180,
+            "models": [
+              "claude-bridge/claude-sonnet-5"
+            ]
+          },
+          {
+            "session": "2026-09-07T06-18-22-386Z_01a07a84-8d32-7aa1-b62d-307b71a441d4.jsonl",
+            "type": "main",
+            "cost": 0.04587,
+            "input_tokens": 6595,
+            "output_tokens": 3268,
+            "cache_read_tokens": 0,
+            "cache_write_tokens": 0,
+            "models": [
+              "local-llama/carstenuhlig/omnicoder-9b:q4_K_M"
+            ]
+          }
+        ]
+      },
+      "--C--Users-Jun Pu-.pi-agent-custom-tools--": {
+        "cost": 5.0514551,
+        "code_lines": 3152,
+        "summary_lines": 339,
+        "sessions": [
+          {
+            "session": "2026-09-07T08-21-56-448Z_01a07af5-ae60-7f68-97ba-1f6cfa522591.jsonl",
+            "type": "main",
+            "cost": 5.0514551,
+            "input_tokens": 368,
+            "output_tokens": 104462,
+            "cache_read_tokens": 15514433,
+            "cache_write_tokens": 361285,
+            "models": [
+              "claude-bridge/claude-sonnet-5"
+            ]
+          }
+        ]
+      }
+    },
+    "generated_at": "2026-09-07T09:36:43Z",
+    "sessions_root": "C:\\Users\\Jun Pu\\.pi\\agent\\sessions",
+    "default_provider": "anthropic",
+    "default_model": "claude-sonnet-5"
+  }
+}

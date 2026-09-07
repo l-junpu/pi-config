@@ -1,8 +1,10 @@
-npm-cache/
 external-references/
+node_modules/
+npm-cache/
 sessions/
 backup/
 state/
+dist/
 tmp/
 
 **/auth.json

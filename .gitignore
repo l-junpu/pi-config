@@ -14,3 +14,5 @@ tmp/
 **/.DS_Store
 
 *.log
+
+custom-tools/cost-analysis/bin

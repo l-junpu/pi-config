@@ -5,58 +5,52 @@
  * Commands:
  *     /plan   switch to plan mode
  *     /build  switch to build mode
+ * In Plan mode write/edit tools are blocked.
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { dirname } from "path";
-import { fileURLToPath } from "url";
 
 type PlanBuildMode = "plan" | "build";
-
-const MODE_FILE = dirname(fileURLToPath(import.meta.url)) + "/mode.json";
-
-function readMode(): PlanBuildMode {
-	try {
-		if (existsSync(MODE_FILE)) {
-			const raw = JSON.parse(readFileSync(MODE_FILE, "utf-8")) as { mode?: string };
-			if (raw.mode === "plan" || raw.mode === "build") return raw.mode;
-		}
-	} catch {
-		/* corrupt file -> default */
-	}
-	return "plan";
-}
-
-function writeMode(mode: PlanBuildMode): void {
-	try {
-		writeFileSync(MODE_FILE, JSON.stringify({ mode }, null, 2), "utf-8");
-	} catch {
-		/* ignore */
-	}
-}
 
 function getModeLabel(mode: PlanBuildMode): string {
 	return mode === "plan" ? "📋 Plan Mode" : "🔨 Build Mode";
 }
 
-// Compact form for the status bar segment (see pi-omp-theme's statusLine.customItems).
 function getModeStatus(mode: PlanBuildMode): string {
 	return mode === "plan" ? "📋 Plan" : "🔨 Build";
 }
 
-function syncStatus(ctx: ExtensionContext, mode: PlanBuildMode): void {
+function syncStatus(ctx: any, mode: PlanBuildMode): void {
 	ctx.ui.setStatus("planBuildMode", getModeStatus(mode));
 }
 
 export default function (pi: ExtensionAPI) {
-	let mode = readMode();
+	let mode: PlanBuildMode = "plan";
+	const blockedBash = new Set<string>();
 
-	// Every session starts in plan mode
 	pi.on("session_start", async (_event, ctx) => {
 		mode = "plan";
-		writeMode("plan");
+		blockedBash.clear();
 		syncStatus(ctx, mode);
+	});
+
+	pi.on("tool_call", async (event, ctx) => {
+		if (mode === "plan" && (event.toolName === "write" || event.toolName === "edit")) {
+			ctx.ui.notify("Edits are not available in plan mode. Swap to /build for edits.", "warn");
+			return { block: true, reason: "Write/edit tools are disabled in Plan mode. Run /build to enable edits.", terminate: true };
+		}
+		if (mode === "plan" && event.toolName === "bash") {
+			const cmd = String(event.input?.command ?? "").trim();
+			const isWrite = /[>]/ .test(cmd) || /\b(tee|dd|cp|mv|rm|chmod|mkdir|touch)\b/.test(cmd);
+			if (isWrite) {
+				const sig = cmd.slice(0, 200);
+				if (!blockedBash.has(sig)) {
+					ctx.ui.notify("Write operations are not available in plan mode. Swap to /build for edits.", "warn");
+					blockedBash.add(sig);
+				}
+				return { block: true, reason: "Bash write commands are disabled in Plan mode. Run /build to enable.", terminate: true };
+			}
+		}
 	});
 
 	pi.registerCommand("plan", {
@@ -67,7 +61,6 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			mode = "plan";
-			writeMode(mode);
 			syncStatus(ctx, mode);
 			ctx.ui.notify("Switched to plan mode", "info");
 		},
@@ -81,7 +74,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			mode = "build";
-			writeMode(mode);
+			blockedBash.clear();
 			syncStatus(ctx, mode);
 			ctx.ui.notify("Switched to build mode", "info");
 		},
@@ -91,7 +84,7 @@ export default function (pi: ExtensionAPI) {
 		description: "Toggle between plan and build mode",
 		handler: async (ctx) => {
 			mode = mode === "plan" ? "build" : "plan";
-			writeMode(mode);
+			if (mode === "build") blockedBash.clear();
 			syncStatus(ctx, mode);
 			ctx.ui.notify(`Switched to ${getModeLabel(mode)}`, "info");
 		},

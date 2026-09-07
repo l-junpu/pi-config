@@ -5,17 +5,15 @@
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
-    "build": "pkg -t node24-win-x64 --fallback-to-source -o ../bin/dashboard src/server.js"
+    "bundle": "esbuild src/server.js --bundle --platform=node --format=cjs --outfile=../build/server.cjs",
+    "build": "npm run bundle && pkg -t node24-win-x64 -o ../bin/dashboard ../build/server.cjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2"
   },
   "devDependencies": {
-    "@yao-pkg/pkg": "^6.22.0"
-  },
-  "pkg": {
-    "scripts": [],
-    "assets": []
+    "@yao-pkg/pkg": "^6.22.0",
+    "esbuild": "^0.28.2"
   }
 }

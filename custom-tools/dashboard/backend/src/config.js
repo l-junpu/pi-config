@@ -4,15 +4,15 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 export function dashboardDir() {
-  // Inside a pkg-bundled exe, import.meta.url resolves to a virtual snapshot
-  // path, not the real exe location -- use process.execPath instead so
-  // config/ (kept external, not baked into the exe) resolves correctly.
+  // The packaged exe is an esbuild+pkg CJS bundle, where import.meta.url is
+  // unavailable (esbuild leaves it undefined for cjs output) -- use
+  // process.execPath instead so config/ (kept external, not baked into the
+  // exe) resolves to the real exe location rather than throwing.
   if (process.pkg) {
     return path.resolve(path.dirname(process.execPath), "..");
   }
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
   return path.resolve(__dirname, "..", "..");
 }
 

@@ -27,4 +27,12 @@ router.get("/api/teams", (req, res) => {
   res.json({ teams });
 });
 
+// POST /api/focus { team } -- records which team the dashboard UI currently has
+// selected, so the health heartbeat loop only pings that team's hosts.
+router.post("/api/focus", (req, res) => {
+  const { team } = req.body ?? {};
+  store.setFocusedTeam(typeof team === "string" && team ? team : null);
+  res.json({ focused: store.getFocusedTeam() });
+});
+
 export default router;

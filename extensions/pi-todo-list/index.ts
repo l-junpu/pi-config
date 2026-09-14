@@ -111,6 +111,16 @@ export default function (pi: ExtensionAPI) {
 	let todos: Todo[] = [];
 	let nextId = 1;
 
+	// Keep ids aligned with list position so the displayed numbering stays 1..n
+	// after structural changes (insert/remove). Without this, an item inserted in
+	// the middle keeps a high creation-order id and the list looks jumbled.
+	function renumber(): void {
+		todos.forEach((t, i) => {
+			t.id = i + 1;
+		});
+		nextId = todos.length + 1;
+	}
+
 	// Persistent todo widget (shown above the editor whenever todos is non-empty).
 	// widgetTui/widgetInvalidate track the currently-installed instance so tool
 	// calls can force an immediate re-render after mutating state.
@@ -186,7 +196,16 @@ export default function (pi: ExtensionAPI) {
 	function syncWidget(ctx: ExtensionContext): void {
 		if (ctx.mode !== "tui") return;
 		if (todos.length === 0) {
-			if (widgetTui) ctx.ui.setWidget("todo-list", undefined);
+			if (widgetTui) {
+				ctx.ui.setWidget("todo-list", undefined);
+				// Null the globals now instead of waiting for the widget's async
+				// dispose(). Otherwise a later repopulate sees a stale widgetTui,
+				// takes the else-branch below, and invalidates a torn-down instance
+				// instead of mounting a fresh one — leaving the pulse stuck on the
+				// old row instead of the newly active item.
+				widgetTui = undefined;
+				widgetInvalidate = undefined;
+			}
 			return;
 		}
 		if (!widgetTui) {
@@ -230,15 +249,10 @@ export default function (pi: ExtensionAPI) {
 		description: "Manage a todo list. Actions: list, add (text), setStatus (id, status), clear",
 		promptSnippet: "Track multi-step work with the todo tool: add items, mark one in_progress while working on it, then completed.",
 		promptGuidelines: [
-			"Use the todo tool for any task that takes more than one step. Do not silently work through multi-step tasks without tracking them.",
-			"When a task starts: break it into concrete todo items and add each one with action=add before starting work.",
-			"Items execute strictly in list order. Before starting work on an item, set it to in_progress with action=setStatus. Only one item should be in_progress at a time.",
-			"The tool enforces order: setStatus to in_progress is rejected if an earlier item isn't completed yet. Do not try to skip ahead.",
-			"If the plan changes mid-task (a step is no longer needed, needs rewording, or a new step must be inserted before a later one), update the list with action=remove, action=edit, or action=insert (with position) instead of leaving stale or out-of-order items.",
-			"As soon as an item is finished, set it to completed with action=setStatus. Do not batch completions at the end.",
-			"Before ending your turn, call action=list to review the todo list. If items remain pending or in_progress, keep working through them instead of stopping early.",
-			"Only end your response once every todo item is completed, or you are blocked and must ask the user.",
-			"Skip the todo tool only for trivial, single-step requests (e.g. answering a quick question, a one-line edit).",
+			"Use the todo tool for any task with more than one step: break it into items with action=add before starting. Skip it only for trivial single-step requests.",
+			"Work items in list order: set exactly one item to in_progress before starting it, and mark it completed the moment it's done (never batch completions at the end).",
+			"The tool blocks starting an item while an earlier one is incomplete. To change the plan use action=edit, action=remove, or action=insert (with position) instead of skipping ahead.",
+			"Before ending your turn, call action=list and keep working until every item is completed, or you are blocked and must ask the user.",
 		],
 		parameters: TodoParams,
 
@@ -280,10 +294,11 @@ export default function (pi: ExtensionAPI) {
 							details: { action: "insert", todos: [...todos], nextId, error: "text required" } as TodoDetails,
 						};
 					}
-					const newTodo: Todo = { id: nextId++, text: params.text, status: "pending" };
+					const newTodo: Todo = { id: nextId, text: params.text, status: "pending" };
 					const index =
 						params.position === undefined ? todos.length : Math.max(0, Math.min(params.position, todos.length));
 					todos.splice(index, 0, newTodo);
+					renumber();
 					syncWidget(ctx);
 					return {
 						content: [{ type: "text", text: `Inserted todo #${newTodo.id} at position ${index}: ${newTodo.text}` }],
@@ -334,6 +349,7 @@ export default function (pi: ExtensionAPI) {
 						};
 					}
 					const [removed] = todos.splice(index, 1);
+					renumber();
 					syncWidget(ctx);
 					return {
 						content: [{ type: "text", text: `Removed todo #${removed.id}: ${removed.text}` }],

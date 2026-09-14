@@ -54,13 +54,17 @@ async function pollLoop(intervalSeconds) {
 
 // Cheap /health-only heartbeat, independent of and much more frequent than the
 // full report poll above -- so a member shows online as soon as its agent is
-// reachable, without waiting for (or forcing) a full report pull.
+// reachable, without waiting for (or forcing) a full report pull. Scoped to just
+// the team currently focused in the dashboard UI (see store.setFocusedTeam),
+// rather than every configured host across every team.
 async function healthLoop(intervalSeconds) {
   for (;;) {
     try {
-      const hosts = config.loadHosts();
-      const entries = config.iterMembers(hosts);
-      if (entries.length > 0) await poller.checkHealthAll(entries);
+      const focusedTeam = store.getFocusedTeam();
+      if (focusedTeam) {
+        const entries = config.iterMembers().filter((e) => e.team === focusedTeam);
+        if (entries.length > 0) await poller.checkHealthAll(entries);
+      }
     } catch (e) {
       console.error("[healthLoop] error:", e);
     }

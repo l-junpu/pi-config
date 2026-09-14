@@ -22979,8 +22979,14 @@ function loadHosts() {
 function saveHosts(hosts) {
   (0, import_node_fs.writeFileSync)(hostsPath(), JSON.stringify(hosts, null, 2), "utf-8");
 }
+function subnetPath() {
+  return import_node_path.default.join(configDir(), "subnet.json");
+}
 function loadSubnet() {
-  return loadJson(import_node_path.default.join(configDir(), "subnet.json"));
+  return loadJson(subnetPath());
+}
+function saveSubnet(subnet) {
+  (0, import_node_fs.writeFileSync)(subnetPath(), JSON.stringify(subnet, null, 2), "utf-8");
 }
 function loadServer() {
   return loadJson(import_node_path.default.join(configDir(), "server.json"));
@@ -23086,6 +23092,13 @@ function removeMember(name) {
 function getAllState() {
   return Object.fromEntries(state);
 }
+var focusedTeam = null;
+function setFocusedTeam(team) {
+  focusedTeam = team;
+}
+function getFocusedTeam() {
+  return focusedTeam;
+}
 
 // src/poller.js
 var TIMEOUT_MS = 5e3;
@@ -23162,6 +23175,11 @@ router.get("/api/teams", (req, res) => {
   }));
   res.json({ teams });
 });
+router.post("/api/focus", (req, res) => {
+  const { team } = req.body ?? {};
+  setFocusedTeam(typeof team === "string" && team ? team : null);
+  res.json({ focused: getFocusedTeam() });
+});
 var teams_default = router;
 
 // src/routes/reports.js
@@ -23180,6 +23198,7 @@ function emptyTotals() {
     priced_as_default_turns: 0,
     code_lines: 0,
     summary_lines: 0,
+    thinking_lines: 0,
     sessions_scanned: 0
   };
 }
@@ -23204,10 +23223,11 @@ function mergeReports(reports) {
       }
     }
     for (const [day, d] of Object.entries(report.by_day ?? {})) {
-      const bd = byDay[day] ??= { cost: 0, code_lines: 0, summary_lines: 0 };
+      const bd = byDay[day] ??= { cost: 0, code_lines: 0, summary_lines: 0, thinking_lines: 0 };
       bd.cost += d.cost ?? 0;
       bd.code_lines += d.code_lines ?? 0;
       bd.summary_lines += d.summary_lines ?? 0;
+      bd.thinking_lines += d.thinking_lines ?? 0;
     }
     for (const [week, cost] of Object.entries(report.by_week ?? {})) {
       byWeek[week] = (byWeek[week] ?? 0) + cost;
@@ -23228,39 +23248,43 @@ function mergeReports(reports) {
     by_month: byMonth
   };
 }
+function localDateStr(daysAgo = 0) {
+  const d = /* @__PURE__ */ new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 function filterByRange(report, range) {
   if (!RANGES.includes(range)) {
     throw new Error(`Invalid range: ${range}`);
   }
   const result = { ...report };
   if (range === "all") return result;
-  const today = /* @__PURE__ */ new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  let cutoff;
-  if (range === "day") {
-    cutoff = today;
-  } else if (range === "week") {
-    cutoff = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1e3);
-  } else {
-    cutoff = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1e3);
-  }
+  const daysBack = range === "day" ? 0 : range === "week" ? 6 : 29;
+  const cutoff = localDateStr(daysBack);
   let filteredCost = 0;
   let filteredCode = 0;
   let filteredSummary = 0;
+  let filteredThinking = 0;
+  const filteredByDay = {};
   for (const [day, d] of Object.entries(report.by_day ?? {})) {
     if (day === "unknown") continue;
-    const dayDate = /* @__PURE__ */ new Date(`${day}T00:00:00Z`);
-    if (Number.isNaN(dayDate.getTime())) continue;
-    if (dayDate >= cutoff) {
+    if (day >= cutoff) {
       filteredCost += d.cost ?? 0;
       filteredCode += d.code_lines ?? 0;
       filteredSummary += d.summary_lines ?? 0;
+      filteredThinking += d.thinking_lines ?? 0;
+      filteredByDay[day] = d;
     }
   }
   result.totals = { ...report.totals ?? {} };
   result.totals.cost = filteredCost;
   result.totals.code_lines = filteredCode;
   result.totals.summary_lines = filteredSummary;
+  result.totals.thinking_lines = filteredThinking;
+  result.by_day = filteredByDay;
   result.range = range;
   return result;
 }
@@ -23372,6 +23396,20 @@ router4.post("/api/teams", (req, res) => {
   hosts.teams.push({ team, members: [] });
   saveHosts(hosts);
   res.status(201).json({ team, members: [] });
+});
+router4.delete("/api/teams/:team", (req, res) => {
+  const { team } = req.params;
+  const hosts = loadHosts();
+  const teamEntry = hosts.teams.find((t) => t.team === team);
+  if (!teamEntry) {
+    return res.status(404).json({ detail: `Unknown team '${team}'` });
+  }
+  for (const member of teamEntry.members ?? []) {
+    removeMember(member.name);
+  }
+  hosts.teams = hosts.teams.filter((t) => t.team !== team);
+  saveHosts(hosts);
+  res.status(204).end();
 });
 router4.post("/api/teams/:team/members", (req, res) => {
   const { team } = req.params;
@@ -23539,6 +23577,46 @@ var router5 = (0, import_express5.Router)();
 router5.get("/api/discovered", (req, res) => {
   res.json(loadDiscovered());
 });
+function withPreview(subnet) {
+  try {
+    const ips = hostsInCidr(subnet.cidr);
+    return { ...subnet, preview: { count: ips.length, first: ips[0] ?? null, last: ips[ips.length - 1] ?? null } };
+  } catch (e) {
+    return { ...subnet, preview: null, error: String(e.message ?? e) };
+  }
+}
+router5.get("/api/subnet", (req, res) => {
+  let subnet;
+  try {
+    subnet = loadSubnet();
+  } catch (e) {
+    return res.status(500).json({ detail: `Could not load subnet.json: ${e}` });
+  }
+  res.json(withPreview(subnet));
+});
+router5.put("/api/subnet", (req, res) => {
+  const { cidr, port: port2, timeout_ms } = req.body ?? {};
+  if (!cidr || typeof cidr !== "string" || !cidr.trim()) {
+    return res.status(400).json({ detail: "cidr is required" });
+  }
+  const portNum = Number(port2);
+  if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
+    return res.status(400).json({ detail: "port must be between 1 and 65535" });
+  }
+  const timeoutNum = Number(timeout_ms);
+  if (!Number.isInteger(timeoutNum) || timeoutNum < 1) {
+    return res.status(400).json({ detail: "timeout_ms must be a positive integer" });
+  }
+  let ips;
+  try {
+    ips = hostsInCidr(cidr.trim());
+  } catch (e) {
+    return res.status(400).json({ detail: String(e.message ?? e) });
+  }
+  const subnet = { cidr: cidr.trim(), port: portNum, timeout_ms: timeoutNum };
+  saveSubnet(subnet);
+  res.json({ ...subnet, preview: { count: ips.length, first: ips[0] ?? null, last: ips[ips.length - 1] ?? null } });
+});
 router5.post("/api/discover", async (req, res) => {
   let subnet;
   try {
@@ -23598,9 +23676,11 @@ async function pollLoop(intervalSeconds) {
 async function healthLoop(intervalSeconds) {
   for (; ; ) {
     try {
-      const hosts = loadHosts();
-      const entries = iterMembers(hosts);
-      if (entries.length > 0) await checkHealthAll(entries);
+      const focusedTeam2 = getFocusedTeam();
+      if (focusedTeam2) {
+        const entries = iterMembers().filter((e) => e.team === focusedTeam2);
+        if (entries.length > 0) await checkHealthAll(entries);
+      }
     } catch (e) {
       console.error("[healthLoop] error:", e);
     }

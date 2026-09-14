@@ -112,3 +112,16 @@ export function removeMember(name) {
 export function getAllState() {
   return Object.fromEntries(state);
 }
+
+// The team currently shown in the dashboard's UI -- set by the frontend whenever the
+// team selector changes, so the health heartbeat loop only pings that team's hosts
+// instead of every configured host across every team.
+let focusedTeam = null;
+
+export function setFocusedTeam(team) {
+  focusedTeam = team;
+}
+
+export function getFocusedTeam() {
+  return focusedTeam;
+}

@@ -34,6 +34,7 @@ export interface Totals {
   priced_as_default_turns: number;
   code_lines: number;
   summary_lines: number;
+  thinking_lines: number;
   sessions_scanned: number;
 }
 
@@ -41,7 +42,7 @@ export interface Report {
   totals: Totals;
   date_range: { earliest: string | null; latest: string | null };
   by_model: Record<string, ModelStats>;
-  by_day: Record<string, { cost: number; code_lines: number; summary_lines: number }>;
+  by_day: Record<string, { cost: number; code_lines: number; summary_lines: number; thinking_lines: number }>;
   by_week: Record<string, number>;
   by_month: Record<string, number>;
   range?: Range;
@@ -85,4 +86,18 @@ export interface DiscoveredHost {
 export interface DiscoverResponse {
   hosts: DiscoveredHost[];
   found: number;
+}
+
+export interface SubnetPreview {
+  count: number;
+  first: string | null;
+  last: string | null;
+}
+
+export interface SubnetConfig {
+  cidr: string;
+  port: number;
+  timeout_ms: number;
+  preview: SubnetPreview | null;
+  error?: string;
 }

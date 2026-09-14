@@ -1,10 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import toast, { Toaster } from "react-hot-toast";
 import * as api from "./api";
 import AddMemberModal from "./components/AddMemberModal";
 import AddTeamModal from "./components/AddTeamModal";
 import CostSummary from "./components/CostSummary";
 import CostTrendChart from "./components/CostTrendChart";
+import DeleteTeamModal from "./components/DeleteTeamModal";
 import DiscoverButton from "./components/DiscoverButton";
 import DiscoveredHostsModal from "./components/DiscoveredHostsModal";
 import EditMemberModal from "./components/EditMemberModal";
@@ -12,6 +13,7 @@ import GlobalPollButton from "./components/GlobalPollButton";
 import MemberList from "./components/MemberList";
 import ModelBreakdownTable from "./components/ModelBreakdownTable";
 import RangeSelector from "./components/RangeSelector";
+import SubnetConfigModal from "./components/SubnetConfigModal";
 import TeamSummaryStrip from "./components/TeamSummaryStrip";
 import { PopupProvider } from "./PopupContext";
 import type { DiscoveredHost, Member, Range, Report, Team } from "./types";
@@ -27,18 +29,28 @@ export default function App() {
   const [showAddMember, setShowAddMember] = useState(false);
   const [editingMember, setEditingMember] = useState<Member | null>(null);
   const [discoveredHosts, setDiscoveredHosts] = useState<DiscoveredHost[] | null>(null);
+  const [showDeleteTeam, setShowDeleteTeam] = useState(false);
+  const [showSubnetConfig, setShowSubnetConfig] = useState(false);
+
+  // Tracked in a ref (not just the `selectedTeam` state closure) so the periodic
+  // status-refresh interval below always checks the *current* selection instead
+  // of whatever it was when the interval was first set up.
+  const selectedTeamRef = useRef(selectedTeam);
+  useEffect(() => {
+    selectedTeamRef.current = selectedTeam;
+  }, [selectedTeam]);
 
   async function loadTeams() {
     const data = await api.getTeams();
     setTeams(data.teams);
-    if (data.teams.length > 0 && !selectedTeam) {
+    if (data.teams.length > 0 && !selectedTeamRef.current) {
       setSelectedTeam(data.teams[0].team);
     }
   }
 
-  async function loadReport() {
+  async function loadReport(silent = false) {
     if (!selectedTeam) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       if (selectedMember) {
         const res = await api.getMemberReport(selectedMember, range);
@@ -48,19 +60,38 @@ export default function App() {
         setReport(res.report);
       }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
     loadTeams();
+    // Refreshes member online/offline status (backend heartbeats every 5s) --
+    // without this, the status dot only ever updates after a manual action.
+    const interval = setInterval(loadTeams, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   useEffect(() => {
     loadReport();
   }, [selectedTeam, selectedMember, range]);
 
+  // The backend re-polls members every poll_interval_seconds (5 min). Refresh the
+  // report periodically (silently -- no spinner) so the numbers, especially the
+  // "Today" card, update without needing a manual poll or a range/member switch.
+  useEffect(() => {
+    const interval = setInterval(() => loadReport(true), 30000);
+    return () => clearInterval(interval);
+  }, [selectedTeam, selectedMember, range]);
+
+  // Tells the backend which team is currently focused, so its health heartbeat
+  // loop only pings that team's hosts instead of every configured host.
+  useEffect(() => {
+    if (selectedTeam) api.setFocusedTeam(selectedTeam).catch(() => {});
+  }, [selectedTeam]);
+
   const currentTeam = teams.find((t) => t.team === selectedTeam);
+  const selectedMemberObj = currentTeam?.members.find((m) => m.name === selectedMember) ?? null;
 
   async function handleDeleteMember(member: Member) {
     if (!confirm(`Remove ${member.name} from ${selectedTeam}?`)) return;
@@ -72,6 +103,12 @@ export default function App() {
     } catch (err) {
       toast.error((err as Error).message);
     }
+  }
+
+  function handleTeamDeleted() {
+    const remaining = teams.filter((t) => t.team !== selectedTeam);
+    setSelectedTeam(remaining[0]?.team ?? "");
+    setSelectedMember(null);
   }
 
   async function handleRefresh() {
@@ -125,6 +162,9 @@ export default function App() {
           <button className="btn" onClick={() => setShowAddTeam(true)}>
             + New Team
           </button>
+          <button className="btn" onClick={() => setShowSubnetConfig(true)}>
+            Subnet Settings
+          </button>
           <DiscoverButton onDiscovered={setDiscoveredHosts} />
           <GlobalPollButton label={selectedMember ? `Poll ${selectedMember}` : "Poll Team"} onConfirm={handleRefresh} />
         </div>
@@ -154,6 +194,12 @@ export default function App() {
         />
       )}
 
+      {showDeleteTeam && currentTeam && (
+        <DeleteTeamModal team={currentTeam} onClose={() => setShowDeleteTeam(false)} onDeleted={handleTeamDeleted} />
+      )}
+
+      {showSubnetConfig && <SubnetConfigModal onClose={() => setShowSubnetConfig(false)} />}
+
       {discoveredHosts && (
         <DiscoveredHostsModal
           hosts={discoveredHosts}
@@ -180,10 +226,19 @@ export default function App() {
             onAddMember={() => setShowAddMember(true)}
             onEditMember={setEditingMember}
             onDeleteMember={handleDeleteMember}
+            onDeleteTeam={() => setShowDeleteTeam(true)}
           />
         )}
 
         <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {selectedMemberObj && (
+            <div className="glass" style={{ padding: "8px 14px", display: "flex", alignItems: "center", gap: 10, fontSize: "0.8rem" }}>
+              <span className={`status-dot ${selectedMemberObj.status}`} />
+              <span style={{ fontWeight: 600 }}>{selectedMemberObj.name}</span>
+              <span className="text-dim">{selectedMemberObj.ip}</span>
+            </div>
+          )}
+
           <RangeSelector value={range} onChange={setRange} />
 
           {loading && <div className="text-dim">Loading...</div>}

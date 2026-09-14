@@ -13,6 +13,7 @@ export default function CostSummary({ totals }: Props) {
     { label: "Cache Read", value: totals.cache_read_tokens.toLocaleString() },
     { label: "Code Lines", value: totals.code_lines.toLocaleString() },
     { label: "Summary Lines", value: totals.summary_lines.toLocaleString() },
+    { label: "Thinking Lines", value: (totals.thinking_lines ?? 0).toLocaleString() },
   ];
 
   return (

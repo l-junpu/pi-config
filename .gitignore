@@ -13,5 +13,7 @@ tmp/
 **/.DS_Store
 
 *.log
+__pycache__
 
 custom-tools/cost-analysis/bin
+custom-tools/dashboard/reports

@@ -51,7 +51,10 @@ def main():
             "schtasks", "/Create",
             "/TN", TASK_NAME,
             "/TR", command,
-            "/SC", "ONLOGON",
+            "/SC", "MINUTE",
+            "/MO", "1",        # re-check every minute; default IgnoreNew policy means
+                                # this is a no-op while the agent is already running, and
+                                # only actually (re)launches it after logon or a crash
             "/RL", "LIMITED",
             "/F",  # overwrite if it already exists -- prevents duplicate registrations
         ],

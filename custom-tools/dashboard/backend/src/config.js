@@ -36,8 +36,16 @@ export function saveHosts(hosts) {
   writeFileSync(hostsPath(), JSON.stringify(hosts, null, 2), "utf-8");
 }
 
+function subnetPath() {
+  return path.join(configDir(), "subnet.json");
+}
+
 export function loadSubnet() {
-  return loadJson(path.join(configDir(), "subnet.json"));
+  return loadJson(subnetPath());
+}
+
+export function saveSubnet(subnet) {
+  writeFileSync(subnetPath(), JSON.stringify(subnet, null, 2), "utf-8");
 }
 
 export function loadServer() {

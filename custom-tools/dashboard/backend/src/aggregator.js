@@ -14,6 +14,7 @@ function emptyTotals() {
     priced_as_default_turns: 0,
     code_lines: 0,
     summary_lines: 0,
+    thinking_lines: 0,
     sessions_scanned: 0,
   };
 }
@@ -43,10 +44,11 @@ export function mergeReports(reports) {
     }
 
     for (const [day, d] of Object.entries(report.by_day ?? {})) {
-      const bd = byDay[day] ??= { cost: 0, code_lines: 0, summary_lines: 0 };
+      const bd = byDay[day] ??= { cost: 0, code_lines: 0, summary_lines: 0, thinking_lines: 0 };
       bd.cost += d.cost ?? 0;
       bd.code_lines += d.code_lines ?? 0;
       bd.summary_lines += d.summary_lines ?? 0;
+      bd.thinking_lines += d.thinking_lines ?? 0;
     }
 
     for (const [week, cost] of Object.entries(report.by_week ?? {})) {
@@ -72,11 +74,28 @@ export function mergeReports(reports) {
   };
 }
 
+// This server's local calendar date, `daysAgo` days back, as "YYYY-MM-DD".
+// Built from plain local getters (no UTC round-tripping via toISOString/
+// getTimezoneOffset), so it can't drift by a day depending on the server's
+// UTC offset. by_day keys are each report-generating host's own local date
+// (see analyze.py's extract_day), so comparing these as plain "YYYY-MM-DD"
+// strings is timezone-safe -- no Date-object reparsing involved.
+function localDateStr(daysAgo = 0) {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /**
- * Recomputes totals.cost/code_lines/summary_lines restricted to the given range,
- * using by_day (the only granularity we can slice by date). Other totals fields
- * (tokens, turns, by_model) are all-time only -- report-json doesn't break those
- * down per-day, so they're left as-is regardless of range.
+ * Restricts a report to the given range: totals (cost/code/summary/thinking
+ * lines) and by_day are both cut down to just the days in range, so the
+ * trend chart reflects the selected range (e.g. "week" shows a 7-day graph,
+ * not the full all-time history) instead of always rendering every day ever
+ * recorded. Other totals fields (tokens, turns, by_model) are all-time only --
+ * report-json doesn't break those down per-day, so they're left as-is.
  */
 export function filterByRange(report, range) {
   if (!RANGES.includes(range)) {
@@ -86,28 +105,22 @@ export function filterByRange(report, range) {
   const result = { ...report };
   if (range === "all") return result;
 
-  const today = new Date();
-  today.setUTCHours(0, 0, 0, 0);
-  let cutoff;
-  if (range === "day") {
-    cutoff = today;
-  } else if (range === "week") {
-    cutoff = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else {
-    cutoff = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
-  }
+  const daysBack = range === "day" ? 0 : range === "week" ? 6 : 29;
+  const cutoff = localDateStr(daysBack);
 
   let filteredCost = 0;
   let filteredCode = 0;
   let filteredSummary = 0;
+  let filteredThinking = 0;
+  const filteredByDay = {};
   for (const [day, d] of Object.entries(report.by_day ?? {})) {
     if (day === "unknown") continue;
-    const dayDate = new Date(`${day}T00:00:00Z`);
-    if (Number.isNaN(dayDate.getTime())) continue;
-    if (dayDate >= cutoff) {
+    if (day >= cutoff) {
       filteredCost += d.cost ?? 0;
       filteredCode += d.code_lines ?? 0;
       filteredSummary += d.summary_lines ?? 0;
+      filteredThinking += d.thinking_lines ?? 0;
+      filteredByDay[day] = d;
     }
   }
 
@@ -115,6 +128,8 @@ export function filterByRange(report, range) {
   result.totals.cost = filteredCost;
   result.totals.code_lines = filteredCode;
   result.totals.summary_lines = filteredSummary;
+  result.totals.thinking_lines = filteredThinking;
+  result.by_day = filteredByDay;
   result.range = range;
   return result;
 }

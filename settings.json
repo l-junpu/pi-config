@@ -1,9 +1,8 @@
 {
-  "lastChangelogVersion": "0.84.4",
+  "lastChangelogVersion": "0.85.1",
   "packages": [
     "npm:pi-undo-redo",
-    "npm:pi-claude-bridge",
-    "npm:pi-web-access"
+    "npm:@gotgenes/pi-anthropic-auth"
   ],
   "defaultProvider": "claude-bridge",
   "defaultModel": "claude-sonnet-5",

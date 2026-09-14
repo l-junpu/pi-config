@@ -109,6 +109,44 @@ button {
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
 }
 
+.member-row {
+  border-radius: 10px;
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.member-row:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.member-row.active {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.icon-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: 8px;
+  padding: 4px 10px;
+  color: var(--text-dim);
+  transition: color 0.15s ease;
+}
+
+.icon-btn:hover {
+  color: var(--text);
+}
+
+select option {
+  background: var(--bg-2);
+  color: var(--text);
+}
+
+select option:checked,
+select option:hover {
+  background: var(--accent);
+  color: #0b0d14;
+}
+
 .status-dot {
   display: inline-block;
   width: 8px;

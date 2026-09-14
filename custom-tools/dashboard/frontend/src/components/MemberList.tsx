@@ -14,6 +14,7 @@ interface Props {
   onAddMember: () => void;
   onEditMember: (member: Member) => void;
   onDeleteMember: (member: Member) => void;
+  onDeleteTeam: () => void;
 }
 
 export default function MemberList({
@@ -26,6 +27,7 @@ export default function MemberList({
   onAddMember,
   onEditMember,
   onDeleteMember,
+  onDeleteTeam,
 }: Props) {
   return (
     <div className="glass" style={{ padding: 12, display: "flex", flexDirection: "column", gap: 4 }}>
@@ -65,6 +67,13 @@ export default function MemberList({
       <button className="btn" style={{ textAlign: "left", border: "none", marginTop: 4 }} onClick={onAddMember}>
         + Add Member
       </button>
+      <button
+        className="btn"
+        style={{ textAlign: "left", border: "none", color: "var(--offline)" }}
+        onClick={onDeleteTeam}
+      >
+        Delete Team
+      </button>
     </div>
   );
 }
@@ -87,12 +96,11 @@ function MemberRow({
 
   return (
     <div
+      className={`member-row${active ? " active" : ""}`}
       style={{
         position: "relative",
         display: "flex",
         alignItems: "center",
-        borderRadius: 10,
-        background: active ? "rgba(255,255,255,0.12)" : "transparent",
       }}
     >
       <button
@@ -110,12 +118,12 @@ function MemberRow({
       </button>
       <button
         ref={menuBtnRef}
-        className="btn"
+        className="icon-btn"
         onClick={toggleMenu}
-        style={{ border: "none", padding: "4px 10px", marginRight: 4 }}
+        style={{ marginRight: 4 }}
         aria-label="Member actions"
       >
-        ⋮
+        ☰
       </button>
 
       {menuOpen && menuBtnRef.current &&

@@ -21,6 +21,24 @@ router.post("/api/teams", (req, res) => {
   res.status(201).json({ team, members: [] });
 });
 
+// DELETE /api/teams/:team -- removes the team and all its members from hosts.json
+router.delete("/api/teams/:team", (req, res) => {
+  const { team } = req.params;
+
+  const hosts = config.loadHosts();
+  const teamEntry = hosts.teams.find((t) => t.team === team);
+  if (!teamEntry) {
+    return res.status(404).json({ detail: `Unknown team '${team}'` });
+  }
+
+  for (const member of teamEntry.members ?? []) {
+    store.removeMember(member.name);
+  }
+  hosts.teams = hosts.teams.filter((t) => t.team !== team);
+  config.saveHosts(hosts);
+  res.status(204).end();
+});
+
 // POST /api/teams/:team/members { name, ip, port }
 router.post("/api/teams/:team/members", (req, res) => {
   const { team } = req.params;

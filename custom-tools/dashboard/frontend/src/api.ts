@@ -4,6 +4,7 @@ import type {
   MemberReportResponse,
   RefreshResponse,
   Report,
+  SubnetConfig,
   Team,
   TeamReportResponse,
 } from "./types";
@@ -55,6 +56,18 @@ export function addTeam(team: string): Promise<{ team: string }> {
   return postJson("/api/teams", { team });
 }
 
+export function setFocusedTeam(team: string): Promise<{ focused: string | null }> {
+  return postJson("/api/focus", { team });
+}
+
+export async function deleteTeam(team: string): Promise<void> {
+  const res = await fetch(`/api/teams/${encodeURIComponent(team)}`, { method: "DELETE" });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `DELETE team -> ${res.status}`);
+  }
+}
+
 export function addMember(team: string, name: string, ip: string, port: number): Promise<unknown> {
   return postJson(`/api/teams/${encodeURIComponent(team)}/members`, { name, ip, port });
 }
@@ -84,6 +97,23 @@ export async function deleteMember(team: string, name: string): Promise<void> {
 
 export function getDiscovered(): Promise<{ hosts: DiscoveredHost[] }> {
   return getJson("/api/discovered");
+}
+
+export function getSubnet(): Promise<SubnetConfig> {
+  return getJson("/api/subnet");
+}
+
+export async function saveSubnet(cidr: string, port: number, timeoutMs: number): Promise<SubnetConfig> {
+  const res = await fetch("/api/subnet", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ cidr, port, timeout_ms: timeoutMs }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.detail ?? `PUT subnet -> ${res.status}`);
+  }
+  return res.json();
 }
 
 export function discoverHosts(): Promise<DiscoverResponse> {

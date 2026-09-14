@@ -1,10 +1,10 @@
 import type { Range } from "../types";
 
 const OPTIONS: { value: Range; label: string }[] = [
+  { value: "all", label: "All Time" },
   { value: "day", label: "Today" },
   { value: "week", label: "7 Days" },
   { value: "month", label: "30 Days" },
-  { value: "all", label: "All Time" },
 ];
 
 interface Props {

@@ -110,14 +110,17 @@ def extract_code_lines_from_tool_call(name: str, arguments: dict) -> int:
 
 
 def extract_day(timestamp):
-    """Accepts either an epoch-ms int or an ISO-8601 string; returns a date or None."""
+    """Accepts either an epoch-ms int or an ISO-8601 string; returns the date on this
+    host's local calendar (not UTC), so daily/weekly/monthly buckets roll over at
+    this machine's local midnight instead of UTC midnight."""
     if timestamp is None:
         return None
     if isinstance(timestamp, (int, float)):
-        return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).date()
+        return datetime.fromtimestamp(timestamp / 1000).astimezone().date()
     if isinstance(timestamp, str):
         try:
-            return datetime.fromisoformat(timestamp.replace("Z", "+00:00")).date()
+            dt = datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+            return dt.astimezone().date()
         except ValueError:
             return None
     return None
@@ -152,6 +155,7 @@ def process_session(path: Path, pricing: dict, default_provider: str, default_mo
         "priced_native_turns": 0,
         "code_lines": 0,
         "summary_lines": 0,
+        "thinking_lines": 0,
         "models_used": set(),
         "model_stats": defaultdict(lambda: {
             "cost": 0.0, "input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0, "turns": 0
@@ -217,6 +221,11 @@ def process_session(path: Path, pricing: dict, default_provider: str, default_mo
                 btype = block.get("type")
                 if btype == "text":
                     agg["summary_lines"] += count_lines(block.get("text", ""))
+                elif btype == "thinking":
+                    # Thinking tokens are already billed as part of usage.output above
+                    # (native reasoning-token pricing); this just tracks their volume
+                    # as a stat alongside code/summary lines.
+                    agg["thinking_lines"] += count_lines(block.get("thinking", ""))
                 elif btype == "toolCall":
                     agg["code_lines"] += extract_code_lines_from_tool_call(
                         block.get("name", ""), block.get("arguments", {})
@@ -247,6 +256,7 @@ def aggregate_results(results):
     totals = defaultdict(float)
     total_code_lines = 0
     total_summary_lines = 0
+    total_thinking_lines = 0
     earliest_day = None
     latest_day = None
 
@@ -261,6 +271,7 @@ def aggregate_results(results):
         totals["priced_as_default_turns"] += agg["priced_as_default_turns"]
         total_code_lines += agg["code_lines"]
         total_summary_lines += agg["summary_lines"]
+        total_thinking_lines += agg["thinking_lines"]
 
         if agg["day"] is not None:
             earliest_day = agg["day"] if earliest_day is None else min(earliest_day, agg["day"])
@@ -270,6 +281,7 @@ def aggregate_results(results):
         by_day[day_key]["cost"] += agg["cost"]
         by_day[day_key]["code_lines"] += agg["code_lines"]
         by_day[day_key]["summary_lines"] += agg["summary_lines"]
+        by_day[day_key]["thinking_lines"] += agg["thinking_lines"]
 
         for model_key, stats in agg["model_stats"].items():
             bm = by_model[model_key]
@@ -296,6 +308,7 @@ def aggregate_results(results):
         proj_cost = sum(a["cost"] for _, a in entries)
         proj_code = sum(a["code_lines"] for _, a in entries)
         proj_summary = sum(a["summary_lines"] for _, a in entries)
+        proj_thinking = sum(a["thinking_lines"] for _, a in entries)
         sessions = []
         for is_subagent, agg in sorted(entries, key=lambda x: x[1]["path"]):
             sessions.append({
@@ -312,6 +325,7 @@ def aggregate_results(results):
             "cost": proj_cost,
             "code_lines": proj_code,
             "summary_lines": proj_summary,
+            "thinking_lines": proj_thinking,
             "sessions": sessions,
         }
 
@@ -326,6 +340,7 @@ def aggregate_results(results):
             "priced_as_default_turns": int(totals["priced_as_default_turns"]),
             "code_lines": total_code_lines,
             "summary_lines": total_summary_lines,
+            "thinking_lines": total_thinking_lines,
             "sessions_scanned": len(results),
         },
         "date_range": {
@@ -374,6 +389,7 @@ def render_markdown(sessions_root, data, default_provider, default_model, genera
     lines.append(f"| Turns priced at default-model rate (local/unpriced) | {fmt_int(int(totals['priced_as_default_turns']))} |")
     lines.append(f"| Lines of code generated | {fmt_int(totals['code_lines'])} |")
     lines.append(f"| Lines of summary generated | {fmt_int(totals['summary_lines'])} |")
+    lines.append(f"| Lines of thinking generated | {fmt_int(totals['thinking_lines'])} |")
     lines.append(f"| Sessions scanned | {fmt_int(totals['sessions_scanned'])} |")
     date_range = (
         f"{earliest} to {latest}"
@@ -399,11 +415,14 @@ def render_markdown(sessions_root, data, default_provider, default_model, genera
 
     lines.append("## Daily Breakdown")
     lines.append("")
-    lines.append("| Day | Cost | Code Lines | Summary Lines |")
-    lines.append("|---|---|---|---|")
+    lines.append("| Day | Cost | Code Lines | Summary Lines | Thinking Lines |")
+    lines.append("|---|---|---|---|---|")
     for day in sorted(by_day.keys()):
         d = by_day[day]
-        lines.append(f"| {day} | {fmt_usd(d['cost'])} | {fmt_int(int(d['code_lines']))} | {fmt_int(int(d['summary_lines']))} |")
+        lines.append(
+            f"| {day} | {fmt_usd(d['cost'])} | {fmt_int(int(d['code_lines']))} | "
+            f"{fmt_int(int(d['summary_lines']))} | {fmt_int(int(d.get('thinking_lines', 0)))} |"
+        )
     lines.append("")
 
     lines.append("## Weekly Breakdown")
@@ -432,6 +451,7 @@ def render_markdown(sessions_root, data, default_provider, default_model, genera
         lines.append(f"- Total cost: **{fmt_usd(proj['cost'])}**")
         lines.append(f"- Lines of code: {fmt_int(proj['code_lines'])}")
         lines.append(f"- Lines of summary: {fmt_int(proj['summary_lines'])}")
+        lines.append(f"- Lines of thinking: {fmt_int(proj['thinking_lines'])}")
         lines.append(f"- Sessions: {fmt_int(len(sessions))}")
         lines.append("")
         lines.append("| Session | Type | Cost | Input | Output | Cache Read | Cache Write | Models |")

@@ -1,8 +1,69 @@
 {
   "teams": [
     {
-      "team": "team-alpha",
-      "members": []
+      "team": "AMT 4",
+      "members": [
+        {
+          "name": "Tom",
+          "ip": "192.168.0.24",
+          "port": 8765
+        },
+        {
+          "name": "JunPu",
+          "ip": "192.168.0.45",
+          "port": 8765
+        },
+        {
+          "name": "Bryanlee",
+          "ip": "192.168.0.116",
+          "port": 8765
+        },
+        {
+          "name": "maeloke",
+          "ip": "192.168.0.198",
+          "port": 8765
+        },
+        {
+          "name": "amt4user",
+          "ip": "192.168.0.201",
+          "port": 8765
+        },
+        {
+          "name": "ShengWei",
+          "ip": "192.168.0.36",
+          "port": 8765
+        },
+        {
+          "name": "limzhiqi",
+          "ip": "192.168.0.63",
+          "port": 8765
+        },
+        {
+          "name": "zhitern",
+          "ip": "192.168.0.76",
+          "port": 8765
+        },
+        {
+          "name": "Lambert",
+          "ip": "192.168.0.98",
+          "port": 8765
+        },
+        {
+          "name": "celeste",
+          "ip": "192.168.0.151",
+          "port": 8765
+        },
+        {
+          "name": "meiying",
+          "ip": "192.168.0.88",
+          "port": 8765
+        },
+        {
+          "name": "Seb",
+          "ip": "192.168.0.13",
+          "port": 8765
+        }
+      ]
     }
   ]
 }

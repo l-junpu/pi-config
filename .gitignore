@@ -12,6 +12,7 @@ tmp/
 **/models.json
 **/.DS_Store
 
+*.exe
 *.log
 __pycache__
 
